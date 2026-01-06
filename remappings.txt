@@ -1,0 +1,4 @@
+vault-v2/=lib/vault-v2/src/
+metamorpho-v1.1-morpho-blue/=lib/vault-v2/lib/morpho-blue/
+openzeppelin-contracts/=lib/openzeppelin-contracts/
+forge-std/=lib/forge-std/src/
