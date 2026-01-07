@@ -55,7 +55,7 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
 
     // Params
     uint256 constant LLTV = 860000000000000000; // 86%
-    uint256 constant INITIAL_DEAD_DEPOSIT = 1e9; // 1000 USDC
+    uint256 constant INITIAL_DEAD_DEPOSIT = 1e6; // 1 USDC
     uint256 constant MAX_RATE = 63419583967; // 200% APR Cap (200e16 / 365 days)
     uint256 constant TIMELOCK_LOW = 3 days;
     uint256 constant TIMELOCK_HIGH = 7 days;
@@ -150,7 +150,7 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setSendSharesGate.selector));
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setReceiveAssetsGate.selector));
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setSendAssetsGate.selector));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setReceiveSharesGate.selector)); // NEW requirement
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setReceiveSharesGate.selector));
 
         console.log("Registry set and abdicated. Gates abdicated.");
 
@@ -185,10 +185,17 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
         console.log("Max Rate set to 200% APR");
 
         // --- Step 6: Dead Deposit (Security) ---
-        // deal removed from script, assuming deployer has funds (prod) or dealing in test (local)
+
+        // A. Deposit into Vault (seeds share price)
         IERC20(USDC).approve(address(vault), INITIAL_DEAD_DEPOSIT);
         vault.deposit(INITIAL_DEAD_DEPOSIT, address(0xdEaD));
-        console.log("Dead deposit executed.");
+        console.log("Dead deposit to vault executed.");
+
+        // B. Supply directly to Morpho Market (seeds the market)
+        // Approve Morpho to spend USDC
+        IERC20(USDC).approve(MORPHO_BLUE, INITIAL_DEAD_DEPOSIT);
+        morpho.supply(params, INITIAL_DEAD_DEPOSIT, 0, address(0xdEaD), bytes(""));
+        console.log("Dead supply to morpho market executed.");
 
         // --- Step 7: Timelocks  ---
         // Configure Granular Timelocks

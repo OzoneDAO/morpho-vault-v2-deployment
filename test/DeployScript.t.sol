@@ -22,7 +22,7 @@ contract DeployScriptTest is Test {
         // Fund the deployer (mocked in setUp)
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        deal(USDC, deployer, 1e9); // Fund for dead deposit
+        deal(USDC, deployer, 2e6); // Fund for dead deposits (vault + morpho)
 
         // Execute the script
         DeployUSDCVaultV2.DeploymentResult memory result = deployScript.run();
@@ -41,7 +41,7 @@ contract DeployScriptTest is Test {
         // 1. Fund Deployer & Run deployment
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        deal(USDC, deployer, 1e9); // Fund for dead deposit
+        deal(USDC, deployer, 2e6); // Fund for dead deposits (vault + morpho)
 
         DeployUSDCVaultV2.DeploymentResult memory result = deployScript.run();
         IVaultV2 vault = IVaultV2(result.vaultV2);
@@ -64,8 +64,8 @@ contract DeployScriptTest is Test {
         assertEq(sharesReceived, expectedShares, "Shares received mismatch");
         assertEq(vault.balanceOf(user), sharesReceived, "User vault balance mismatch");
         
-        // Assertion updated for 1e9 dead deposit
-        assertEq(vault.totalAssets(), depositAmount + 1e9, "Total assets mismatch (inc. dead deposit of 1e9)");
+        // Assertion updated for 1e6 dead deposit (vault only, morpho supply does not affect vault totalAssets)
+        assertEq(vault.totalAssets(), depositAmount + 1e6, "Total assets mismatch (inc. dead deposit of 1e6)");
 
         // 4. Withdraw
         // Withdraw half
