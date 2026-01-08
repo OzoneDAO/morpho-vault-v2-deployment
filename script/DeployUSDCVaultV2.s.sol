@@ -79,8 +79,8 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
         address sentinel = vm.envOr("SENTINEL", address(0));
         
         // Vault metadata
-        string memory vaultName = vm.envOr("VAULT_NAME", string("Morpho USDC Vault V2"));
-        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("mUSDCv2"));
+        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDC Vault V2"));
+        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdcVaultV2"));
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -149,7 +149,6 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
         // ensure valid exit/entry for users
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setSendSharesGate.selector));
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setReceiveAssetsGate.selector));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setSendAssetsGate.selector));
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setReceiveSharesGate.selector));
 
         console.log("Registry set and abdicated. Gates abdicated.");
