@@ -19,11 +19,15 @@ Run the integration and deployment tests against a mainnet fork.
 - The tests mock the `PRIVATE_KEY` for simulation.
 
 ```shell
-# Run integration tests (requires mainnet fork)
-forge test --match-contract DeployScriptTest --fork-url <RPC_URL> -vvvv
+source .env
 
-# Example with local anvil/localhost
+# before vault deployment
+anvil --fork-url $RPC_URL
 forge test --match-contract DeployScriptTest --fork-url http://localhost:8545 -vvvv
+
+# after vault deployment (with VAULT_ADDRESS in .env)
+anvil --fork-url $RPC_URL
+forge test --match-contract DeployedVaultTest --fork-url http://localhost:8545 -vvvv
 ```
 
 ## Deployment
@@ -34,11 +38,12 @@ To deploy the Vault V2 to Mainnet (or a testnet):
 2. Run the deployment script.
 
 ```shell
+source .env
 forge script script/DeployUSDCVaultV2.s.sol:DeployUSDCVaultV2 \
-  --rpc-url <RPC_URL> \
+  --rpc-url $RPC_URL \
   --broadcast \
-  --verify \
-  --etherscan-api-key <ETHERSCAN_KEY>
+  --slow \
+  -vvvv
 ```
 
 ## Configuration & Roles
