@@ -56,6 +56,66 @@ contract DeployedVaultTest is Test {
         assertTrue(vault.curator() != address(0), "Curator should be set");
     }
 
+    function testExpectedOwner() public view {
+        address expectedOwner = vm.envOr("OWNER", address(0));
+        if (expectedOwner != address(0)) {
+            console.log("=== Expected Owner Check ===");
+            console.log("Expected Owner:", expectedOwner);
+            console.log("Actual Owner:", vault.owner());
+            assertEq(vault.owner(), expectedOwner, "Owner should match expected");
+        }
+    }
+
+    function testExpectedCurator() public view {
+        address expectedCurator = vm.envOr("CURATOR", address(0));
+        if (expectedCurator != address(0)) {
+            console.log("=== Expected Curator Check ===");
+            console.log("Expected Curator:", expectedCurator);
+            console.log("Actual Curator:", vault.curator());
+            assertEq(vault.curator(), expectedCurator, "Curator should match expected");
+        }
+    }
+
+    function testExpectedAllocator() public view {
+        address expectedAllocator = vm.envOr("ALLOCATOR", address(0));
+        if (expectedAllocator != address(0)) {
+            console.log("=== Expected Allocator Check ===");
+            console.log("Expected Allocator:", expectedAllocator);
+            console.log("Is Allocator:", vault.isAllocator(expectedAllocator));
+            assertTrue(vault.isAllocator(expectedAllocator), "Expected address should be allocator");
+        }
+    }
+
+    function testExpectedSentinel() public view {
+        address expectedSentinel = vm.envOr("SENTINEL", address(0));
+        if (expectedSentinel != address(0)) {
+            console.log("=== Expected Sentinel Check ===");
+            console.log("Expected Sentinel:", expectedSentinel);
+            console.log("Is Sentinel:", vault.isSentinel(expectedSentinel));
+            assertTrue(vault.isSentinel(expectedSentinel), "Expected address should be sentinel");
+        }
+    }
+
+    function testExpectedVaultName() public view {
+        string memory expectedName = vm.envOr("VAULT_NAME", string(""));
+        if (bytes(expectedName).length > 0) {
+            console.log("=== Expected Vault Name Check ===");
+            console.log("Expected Name:", expectedName);
+            console.log("Actual Name:", vault.name());
+            assertEq(vault.name(), expectedName, "Vault name should match expected");
+        }
+    }
+
+    function testExpectedVaultSymbol() public view {
+        string memory expectedSymbol = vm.envOr("VAULT_SYMBOL", string(""));
+        if (bytes(expectedSymbol).length > 0) {
+            console.log("=== Expected Vault Symbol Check ===");
+            console.log("Expected Symbol:", expectedSymbol);
+            console.log("Actual Symbol:", vault.symbol());
+            assertEq(vault.symbol(), expectedSymbol, "Vault symbol should match expected");
+        }
+    }
+
     function testAdapterConfiguration() public view {
         console.log("=== Adapter Configuration ===");
 
