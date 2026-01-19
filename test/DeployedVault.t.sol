@@ -14,7 +14,7 @@ contract DeployedVaultTest is Test {
     // ============ DEPLOYED ADDRESSES ============
 
     // Constants
-    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address public constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
     address public constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
 
     uint256 public constant TIMELOCK_LOW = 3 days;
@@ -22,13 +22,13 @@ contract DeployedVaultTest is Test {
 
     // State
     IVaultV2 public vault;
-    IERC20 public usdc;
+    IERC20 public usds;
 
     function setUp() public {
         // Allow override via env var
         address vaultAddr = vm.envOr("VAULT_ADDRESS", address(0));
         vault = IVaultV2(vaultAddr);
-        usdc = IERC20(USDC);
+        usds = IERC20(USDS);
 
         console.log("Testing vault at:", address(vault));
     }
@@ -44,7 +44,7 @@ contract DeployedVaultTest is Test {
         console.log("Total Assets:", vault.totalAssets());
         console.log("Total Supply:", vault.totalSupply());
 
-        assertEq(vault.asset(), USDC, "Asset should be USDC");
+        assertEq(vault.asset(), USDS, "Asset should be USDS");
     }
 
     function testRoleConfiguration() public view {
@@ -204,13 +204,13 @@ contract DeployedVaultTest is Test {
 
     function testUserDeposit() public {
         address user = makeAddr("testUser");
-        uint256 depositAmount = 100 * 1e6; // 100 USDC
+        uint256 depositAmount = 100 * 1e18; // 100 USDS
 
-        // Fund user with USDC
-        deal(USDC, user, depositAmount);
+        // Fund user with USDS
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
 
         uint256 sharesBefore = vault.balanceOf(user);
         uint256 expectedShares = vault.previewDeposit(depositAmount);
@@ -231,13 +231,13 @@ contract DeployedVaultTest is Test {
 
     function testUserWithdraw() public {
         address user = makeAddr("testUser2");
-        uint256 depositAmount = 100 * 1e6; // 100 USDC
+        uint256 depositAmount = 100 * 1e18; // 100 USDS
 
         // Fund and deposit
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         console.log("=== User Withdraw Test ===");
@@ -256,22 +256,22 @@ contract DeployedVaultTest is Test {
 
         assertEq(assetsReceived, expectedAssets, "Assets should match preview");
         assertEq(vault.balanceOf(user), shares - withdrawShares, "Shares should decrease");
-        assertEq(usdc.balanceOf(user), assetsReceived, "USDC balance should match");
+        assertEq(usds.balanceOf(user), assetsReceived, "USDS balance should match");
 
         vm.stopPrank();
     }
 
     function testFullDepositWithdrawCycle() public {
         address user = makeAddr("cycleUser");
-        uint256 depositAmount = 1000 * 1e6; // 1000 USDC
+        uint256 depositAmount = 1000 * 1e18; // 1000 USDS
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
 
         console.log("=== Full Cycle Test ===");
-        console.log("Initial USDC:", depositAmount);
+        console.log("Initial USDS:", depositAmount);
 
         // Deposit
         uint256 shares = vault.deposit(depositAmount, user);
@@ -279,7 +279,7 @@ contract DeployedVaultTest is Test {
 
         // Full redeem
         uint256 assetsBack = vault.redeem(shares, user, user);
-        console.log("USDC after full redeem:", assetsBack);
+        console.log("USDS after full redeem:", assetsBack);
 
         // Should get back approximately the same amount (minus any fees/rounding)
         assertApproxEqAbs(assetsBack, depositAmount, 2, "Should get back ~same amount");
@@ -296,14 +296,14 @@ contract DeployedVaultTest is Test {
         uint256 oneShare = 1e18; // Vault has 18 decimals
         uint256 assetsPerShare = vault.convertToAssets(oneShare);
 
-        uint256 oneUSDC = 1e6;
-        uint256 sharesPerUSDC = vault.convertToShares(oneUSDC);
+        uint256 oneUSDS = 1e18;
+        uint256 sharesPerUSDS = vault.convertToShares(oneUSDS);
 
         console.log("Assets per 1e18 shares:", assetsPerShare);
-        console.log("Shares per 1 USDC:", sharesPerUSDC);
+        console.log("Shares per 1 USDS:", sharesPerUSDS);
 
         // Share price should be close to 1:1 for a new vault
-        // 1e18 shares should give ~1e6 assets (1 USDC)
+        // 1e18 shares should give ~1e18 assets (1 USDS)
         assertGt(assetsPerShare, 0, "Should have positive conversion");
     }
 

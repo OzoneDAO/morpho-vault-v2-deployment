@@ -27,10 +27,16 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Start Anvil fork
+      - name: Run deploy script tests
         run: |
           anvil --fork-url ${{ secrets.RPC_URL }} &
           sleep 5
+          forge test --match-contract DeployScriptTest --fork-url http://localhost:8545 -vvvv
+          pkill anvil
 
-      - name: Run tests
-        run: forge test --match-contract DeployedVaultTest --fork-url http://localhost:8545 -vvvv
+      - name: Run deployed vault tests
+        run: |
+          anvil --fork-url ${{ secrets.RPC_URL }} &
+          sleep 5
+          forge test --match-contract DeployedVaultTest --fork-url http://localhost:8545 -vvvv
+          pkill anvil

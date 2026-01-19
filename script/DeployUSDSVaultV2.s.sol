@@ -34,16 +34,14 @@ interface IMorphoMarketV1AdapterV2Factory {
 }
 
 /**
- * @title DeployUSDCVaultV2
- * @notice Deploys Vault V2 for USDC and connects it to the stUSDS/USDC Morpho Market
+ * @title DeployUSDSVaultV2
+ * @notice Deploys Vault V2 for USDS and connects it to the stUSDS/USDS Morpho Market
  * @dev Updated to include full security configuration (Timelocks, MaxRate, Registry Abdication)
  */
-contract DeployUSDCVaultV2 is Script, StdCheats {
+contract DeployUSDSVaultV2 is Script, StdCheats {
     // --- Constants & Addresses (Mainnet) ---
-    address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
     address constant ST_USDS = 0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9;
-    address constant USDS_FEED = 0xfF30586cD0F29eD462364C7e81375FC0C71219b1;
-    address constant USDC_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
     address constant IRM_ADAPTIVE = 0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC;
     address constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
 
@@ -55,7 +53,9 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
 
     // Params
     uint256 constant LLTV = 860000000000000000; // 86%
-    uint256 constant INITIAL_DEAD_DEPOSIT = 1e6; // 1 USDC
+    uint256 constant INITIAL_DEAD_DEPOSIT = 1e18; // 1 USDS
+    uint256 constant INITIAL_DEAD_COLLATERAL = 1e18; // 1 stUSDS
+    uint256 constant DEAD_BORROW_AMOUNT = 8e17; // 0.8 USDS for 80% utilization (safe margin for stUSDS appreciation)
     uint256 constant MAX_RATE = 63419583967; // 200% APR Cap (200e16 / 365 days)
     uint256 constant TIMELOCK_LOW = 3 days;
     uint256 constant TIMELOCK_HIGH = 7 days;
@@ -79,24 +79,26 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
         address sentinel = vm.envOr("SENTINEL", address(0));
         
         // Vault metadata
-        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDC Vault V2"));
-        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdcVaultV2"));
+        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDS Vault V2"));
+        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdsVaultV2"));
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // --- Step 1: Create Oracle (stUSDS/USDC) ---
+        // --- Step 1: Create Oracle (stUSDS/USDS) ---
+        // Oracle uses only the stUSDS ERC4626 redemption rate to price stUSDS in USDS
+        // No Chainlink feeds needed since both tokens are denominated in the same unit (USDS)
         bytes32 oracleSalt = keccak256(abi.encodePacked(block.timestamp, "Oracle"));
         result.oracle = IMorphoChainlinkOracleV2Factory(ORACLE_FACTORY).createMorphoChainlinkOracleV2(
-            ST_USDS, 1e18, USDS_FEED, address(0), 18,
-            address(0), 1, USDC_FEED, address(0), 6,
+            ST_USDS, 1e18, address(0), address(0), 18, // base: stUSDS with ERC4626 conversion, no feeds
+            address(0), 1, address(0), address(0), 18, // quote: USDS, no conversion needed
             oracleSalt
         );
         console.log("Oracle deployed at:", result.oracle);
 
-        // --- Step 2: Create Market (USDC / stUSDS) ---
+        // --- Step 2: Create Market (USDS / stUSDS) ---
         IMorpho morpho = IMorpho(MORPHO_BLUE);
         MarketParams memory params = MarketParams({
-            loanToken: USDC,
+            loanToken: USDS,
             collateralToken: ST_USDS,
             oracle: result.oracle,
             irm: IRM_ADAPTIVE,
@@ -113,7 +115,7 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
         // --- Step 3: Deploy Vault V2 ---
         bytes32 vaultSalt = keccak256(abi.encodePacked(block.timestamp, "VaultV2"));
         // Vault created with deployer as owner
-        result.vaultV2 = VaultV2Factory(VAULT_V2_FACTORY).createVaultV2(deployer, USDC, vaultSalt);
+        result.vaultV2 = VaultV2Factory(VAULT_V2_FACTORY).createVaultV2(deployer, USDS, vaultSalt);
         console.log("VaultV2 deployed at:", result.vaultV2);
         VaultV2 vault = VaultV2(result.vaultV2);
 
@@ -186,15 +188,24 @@ contract DeployUSDCVaultV2 is Script, StdCheats {
         // --- Step 6: Dead Deposit (Security) ---
 
         // A. Deposit into Vault (seeds share price)
-        IERC20(USDC).approve(address(vault), INITIAL_DEAD_DEPOSIT);
+        IERC20(USDS).approve(address(vault), INITIAL_DEAD_DEPOSIT);
         vault.deposit(INITIAL_DEAD_DEPOSIT, address(0xdEaD));
         console.log("Dead deposit to vault executed.");
 
         // B. Supply directly to Morpho Market (seeds the market)
-        // Approve Morpho to spend USDC
-        IERC20(USDC).approve(MORPHO_BLUE, INITIAL_DEAD_DEPOSIT);
+        // Approve Morpho to spend USDS
+        IERC20(USDS).approve(MORPHO_BLUE, INITIAL_DEAD_DEPOSIT);
         morpho.supply(params, INITIAL_DEAD_DEPOSIT, 0, address(0xdEaD), bytes(""));
         console.log("Dead supply to morpho market executed.");
+
+        // C. Supply stUSDS collateral to Morpho Market (for dead borrow position)
+        IERC20(ST_USDS).approve(MORPHO_BLUE, INITIAL_DEAD_COLLATERAL);
+        morpho.supplyCollateral(params, INITIAL_DEAD_COLLATERAL, deployer, bytes(""));
+        console.log("Dead collateral supply to morpho market executed.");
+
+        // D. Borrow USDS to create initial utilization (deployer takes debt, USDS sent to 0xdEaD)
+        morpho.borrow(params, DEAD_BORROW_AMOUNT, 0, deployer, address(0xdEaD));
+        console.log("Dead borrow executed for 80% utilization.");
 
         // --- Step 7: Timelocks  ---
         // Configure Granular Timelocks

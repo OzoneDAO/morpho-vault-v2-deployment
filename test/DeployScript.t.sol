@@ -2,22 +2,23 @@
 pragma solidity 0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
-import {DeployUSDCVaultV2} from "../script/DeployUSDCVaultV2.s.sol";
+import {DeployUSDSVaultV2} from "../script/DeployUSDSVaultV2.s.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IMorpho, MarketParams} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 
 contract DeployScriptTest is Test {
-    DeployUSDCVaultV2 public deployScript;
+    DeployUSDSVaultV2 public deployScript;
 
     // Constants from deployment script
-    address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address public constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
+    address public constant ST_USDS = 0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9;
     address public constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
     address public constant ADAPTER_REGISTRY = 0x3696c5eAe4a7Ffd04Ea163564571E9CD8Ed9364e;
 
     uint256 public constant TIMELOCK_LOW = 3 days;
     uint256 public constant TIMELOCK_HIGH = 7 days;
-    uint256 public constant INITIAL_DEAD_DEPOSIT = 1e6;
+    uint256 public constant INITIAL_DEAD_DEPOSIT = 1e18;
     uint256 public constant MAX_RATE = 63419583967; // 200% APR
 
     // Test addresses
@@ -25,9 +26,9 @@ contract DeployScriptTest is Test {
     uint256 public deployerPrivateKey;
 
     // Deployment result
-    DeployUSDCVaultV2.DeploymentResult public result;
+    DeployUSDSVaultV2.DeploymentResult public result;
     IVaultV2 public vault;
-    IERC20 public usdc;
+    IERC20 public usds;
 
     function setUp() public {
         // Mock the PRIVATE_KEY environment variable
@@ -43,14 +44,15 @@ contract DeployScriptTest is Test {
         deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         deployer = vm.addr(deployerPrivateKey);
 
-        deployScript = new DeployUSDCVaultV2();
-        usdc = IERC20(USDC);
+        deployScript = new DeployUSDSVaultV2();
+        usds = IERC20(USDS);
     }
 
     // ============ HELPER FUNCTIONS ============
 
     function _deployVault() internal {
-        deal(USDC, deployer, 10e6); // Extra funds for dead deposits
+        deal(USDS, deployer, 10e18); // Extra funds for dead deposits
+        deal(ST_USDS, deployer, 2e18); // stUSDS for dead collateral
         result = deployScript.run();
         vault = IVaultV2(result.vaultV2);
     }
@@ -72,7 +74,8 @@ contract DeployScriptTest is Test {
     // ============ DEPLOYMENT VERIFICATION TESTS ============
 
     function testRunScript() public {
-        deal(USDC, deployer, 2e6);
+        deal(USDS, deployer, 2e18);
+        deal(ST_USDS, deployer, 2e18); // stUSDS for dead collateral
         result = deployScript.run();
 
         console.log("Verified Oracle Address:", result.oracle);
@@ -234,12 +237,12 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e6; // 1000 USDC
+        uint256 depositAmount = 1000 * 1e18; // 1000 USDS
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
 
         uint256 expectedShares = vault.convertToShares(depositAmount);
         uint256 sharesReceived = vault.deposit(depositAmount, user);
@@ -247,27 +250,27 @@ contract DeployScriptTest is Test {
 
         assertEq(sharesReceived, expectedShares, "Shares received mismatch");
         assertEq(vault.balanceOf(user), sharesReceived, "User vault balance mismatch");
-        assertEq(usdc.balanceOf(user), 0, "User should have no USDC left");
+        assertEq(usds.balanceOf(user), 0, "User should have no USDS left");
     }
 
     function testVaultWithdraw() public {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e6;
+        uint256 depositAmount = 1000 * 1e18;
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
 
         // Withdraw half
-        uint256 withdrawAmount = 500 * 1e6;
+        uint256 withdrawAmount = 500 * 1e18;
         uint256 sharesBurned = vault.withdraw(withdrawAmount, user, user);
         vm.stopPrank();
 
-        assertEq(usdc.balanceOf(user), withdrawAmount, "User should receive withdrawn amount");
+        assertEq(usds.balanceOf(user), withdrawAmount, "User should receive withdrawn amount");
         assertGt(vault.balanceOf(user), 0, "User should have remaining shares");
     }
 
@@ -275,12 +278,12 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e6;
+        uint256 depositAmount = 1000 * 1e18;
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         // Redeem half the shares
@@ -296,13 +299,13 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 sharesToMint = 1000 * 1e6; // Mint specific amount of shares
+        uint256 sharesToMint = 1000 * 1e18; // Mint specific amount of shares
 
-        // Give user enough USDC
-        deal(USDC, user, 10000 * 1e6);
+        // Give user enough USDS
+        deal(USDS, user, 10000 * 1e18);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), type(uint256).max);
+        usds.approve(address(vault), type(uint256).max);
 
         uint256 assetsRequired = vault.previewMint(sharesToMint);
         uint256 assetsUsed = vault.mint(sharesToMint, user);
@@ -316,12 +319,12 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e6;
+        uint256 depositAmount = 1000 * 1e18;
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         // Full withdrawal
@@ -340,29 +343,29 @@ contract DeployScriptTest is Test {
         address user2 = makeAddr("user2");
         address user3 = makeAddr("user3");
 
-        uint256 amount1 = 1000 * 1e6;
-        uint256 amount2 = 2000 * 1e6;
-        uint256 amount3 = 500 * 1e6;
+        uint256 amount1 = 1000 * 1e18;
+        uint256 amount2 = 2000 * 1e18;
+        uint256 amount3 = 500 * 1e18;
 
-        deal(USDC, user1, amount1);
-        deal(USDC, user2, amount2);
-        deal(USDC, user3, amount3);
+        deal(USDS, user1, amount1);
+        deal(USDS, user2, amount2);
+        deal(USDS, user3, amount3);
 
         // User 1 deposits
         vm.startPrank(user1);
-        usdc.approve(address(vault), amount1);
+        usds.approve(address(vault), amount1);
         vault.deposit(amount1, user1);
         vm.stopPrank();
 
         // User 2 deposits
         vm.startPrank(user2);
-        usdc.approve(address(vault), amount2);
+        usds.approve(address(vault), amount2);
         vault.deposit(amount2, user2);
         vm.stopPrank();
 
         // User 3 deposits
         vm.startPrank(user3);
-        usdc.approve(address(vault), amount3);
+        usds.approve(address(vault), amount3);
         vault.deposit(amount3, user3);
         vm.stopPrank();
 
@@ -381,12 +384,12 @@ contract DeployScriptTest is Test {
 
         address depositor = makeAddr("depositor");
         address receiver = makeAddr("receiver");
-        uint256 amount = 1000 * 1e6;
+        uint256 amount = 1000 * 1e18;
 
-        deal(USDC, depositor, amount);
+        deal(USDS, depositor, amount);
 
         vm.startPrank(depositor);
-        usdc.approve(address(vault), amount);
+        usds.approve(address(vault), amount);
         vault.deposit(amount, receiver);
         vm.stopPrank();
 
@@ -399,7 +402,7 @@ contract DeployScriptTest is Test {
     function testShareConversion() public {
         _deployVault();
 
-        uint256 assets = 1000 * 1e6;
+        uint256 assets = 1000 * 1e18;
         uint256 shares = vault.convertToShares(assets);
         uint256 assetsBack = vault.convertToAssets(shares);
 
@@ -410,7 +413,7 @@ contract DeployScriptTest is Test {
     function testPreviewFunctions() public {
         _deployVault();
 
-        uint256 assets = 1000 * 1e6;
+        uint256 assets = 1000 * 1e18;
 
         uint256 previewDeposit = vault.previewDeposit(assets);
         uint256 previewMint = vault.previewMint(previewDeposit);
@@ -514,12 +517,12 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 100 * 1e6;
+        uint256 depositAmount = 100 * 1e18;
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
 
         // Try to withdraw more than deposited
@@ -532,12 +535,12 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 100 * 1e6;
+        uint256 depositAmount = 100 * 1e18;
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         // Try to redeem more shares than owned
@@ -550,9 +553,9 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 amount = 100 * 1e6;
+        uint256 amount = 100 * 1e18;
 
-        deal(USDC, user, amount);
+        deal(USDS, user, amount);
 
         vm.prank(user);
         vm.expectRevert();
@@ -564,10 +567,10 @@ contract DeployScriptTest is Test {
     function testVaultMetadata() public {
         _deployVault();
 
-        assertEq(vault.asset(), USDC, "Asset should be USDC");
+        assertEq(vault.asset(), USDS, "Asset should be USDS");
         // VaultV2 uses virtual shares pattern: decimals = assetDecimals + (18 - assetDecimals)
-        // For USDC (6 decimals): vault decimals = 6 + 12 = 18
-        assertEq(vault.decimals(), 18, "Vault decimals should be 18 (virtual shares pattern)");
+        // For USDS (18 decimals): vault decimals = 18 + 0 = 18
+        assertEq(vault.decimals(), 18, "Vault decimals should be 18");
 
         string memory name = vault.name();
         string memory symbol = vault.symbol();
@@ -596,11 +599,11 @@ contract DeployScriptTest is Test {
         // The vault may have constraints - verify we can at least deposit a reasonable amount
         // If maxDeposit is 0, it means the vault has some restriction (e.g., gate, cap)
         // In that case, test that we can still deposit a normal amount
-        uint256 testAmount = 1000 * 1e6;
-        deal(USDC, user, testAmount);
+        uint256 testAmount = 1000 * 1e18;
+        deal(USDS, user, testAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), testAmount);
+        usds.approve(address(vault), testAmount);
         uint256 shares = vault.deposit(testAmount, user);
         vm.stopPrank();
 
@@ -611,12 +614,12 @@ contract DeployScriptTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e6;
+        uint256 depositAmount = 1000 * 1e18;
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         uint256 maxWithdraw = vault.maxWithdraw(user);
@@ -637,18 +640,19 @@ contract DeployScriptTest is Test {
     // ============ INTEGRATION TEST ============
 
     function testVaultOperations() public {
-        deal(USDC, deployer, 2e6);
+        deal(USDS, deployer, 2e18);
+        deal(ST_USDS, deployer, 2e18); // stUSDS for dead collateral
         result = deployScript.run();
         vault = IVaultV2(result.vaultV2);
 
         address user = makeAddr("vaultUser");
-        uint256 depositAmount = 1000 * 1e6;
+        uint256 depositAmount = 1000 * 1e18;
 
-        deal(USDC, user, depositAmount);
+        deal(USDS, user, depositAmount);
 
         vm.startPrank(user);
 
-        usdc.approve(address(vault), depositAmount);
+        usds.approve(address(vault), depositAmount);
         uint256 expectedShares = vault.convertToShares(depositAmount);
         uint256 sharesReceived = vault.deposit(depositAmount, user);
 
@@ -661,7 +665,7 @@ contract DeployScriptTest is Test {
         uint256 assetsWithdrawn = vault.redeem(withdrawShares, user, user);
 
         assertEq(vault.balanceOf(user), sharesReceived - withdrawShares, "User remaining shares mismatch");
-        assertEq(usdc.balanceOf(user), assetsWithdrawn, "User USDC balance mismatch");
+        assertEq(usds.balanceOf(user), assetsWithdrawn, "User USDS balance mismatch");
 
         console.log("Deposit and Withdraw steps passed");
         vm.stopPrank();

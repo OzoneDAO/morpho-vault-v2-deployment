@@ -1,6 +1,6 @@
 # Morpho Vault V2 Deployment
 
-This project contains Foundry scripts and tests for deploying and configuring a **Morpho Vault V2 (USDC)** on **Morpho Market V1 (USDC/stUSDS)**.
+This project contains Foundry scripts and tests for deploying and configuring a **Morpho Vault V2 (USDS)** on **Morpho Market V1 (USDS/stUSDS)**.
 
 ## Installation
 
@@ -39,10 +39,11 @@ To deploy the Vault V2 to Mainnet (or a testnet):
 
 ```shell
 source .env
-forge script script/DeployUSDCVaultV2.s.sol:DeployUSDCVaultV2 \
+forge script script/DeployUSDSVaultV2.s.sol:DeployUSDSVaultV2 \
   --rpc-url $RPC_URL \
   --broadcast \
   --slow \
+  --gas-estimate-multiplier 200 \
   -vvvv
 ```
 
