@@ -5,7 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {DeployUSDSVaultV2} from "../script/DeployUSDSVaultV2.s.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
-import {IMorpho, MarketParams} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
+import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 
 contract DeployScriptTest is Test {
     DeployUSDSVaultV2 public deployScript;
@@ -52,7 +52,7 @@ contract DeployScriptTest is Test {
 
     function _deployVault() internal {
         deal(USDS, deployer, 10e18); // Extra funds for dead deposits
-        deal(ST_USDS, deployer, 2e18); // stUSDS for dead collateral
+        deal(ST_USDS, deployer, 3e18); // stUSDS for dead collateral (2.1e18 needed)
         result = deployScript.run();
         vault = IVaultV2(result.vaultV2);
     }
@@ -75,7 +75,7 @@ contract DeployScriptTest is Test {
 
     function testRunScript() public {
         deal(USDS, deployer, 2e18);
-        deal(ST_USDS, deployer, 2e18); // stUSDS for dead collateral
+        deal(ST_USDS, deployer, 3e18); // stUSDS for dead collateral (2.1e18 needed)
         result = deployScript.run();
 
         console.log("Verified Oracle Address:", result.oracle);
@@ -229,6 +229,31 @@ contract DeployScriptTest is Test {
         // This is harder to verify directly, but we can check total assets
         uint256 totalAssets = vault.totalAssets();
         assertEq(totalAssets, INITIAL_DEAD_DEPOSIT, "Total assets should equal dead deposit");
+    }
+
+    function testMorphoMarketUtilizationIs90Percent() public {
+        _deployVault();
+
+        // Get market params from vault's liquidity data (set during deployment)
+        bytes memory liquidityData = vault.liquidityData();
+        MarketParams memory params = abi.decode(liquidityData, (MarketParams));
+
+        Id marketId = Id.wrap(keccak256(abi.encode(params)));
+        IMorpho morpho = IMorpho(MORPHO_BLUE);
+
+        // Get market state
+        Market memory marketState = morpho.market(marketId);
+
+        console.log("Market totalSupplyAssets:", marketState.totalSupplyAssets);
+        console.log("Market totalBorrowAssets:", marketState.totalBorrowAssets);
+
+        // Verify utilization is 90%
+        // utilization = totalBorrowAssets / totalSupplyAssets
+        // 1.8e18 / 2e18 = 90%
+        uint256 utilizationBps = (uint256(marketState.totalBorrowAssets) * 10000) / uint256(marketState.totalSupplyAssets);
+        console.log("Utilization (bps):", utilizationBps);
+
+        assertEq(utilizationBps, 9000, "Market utilization should be 90% (9000 bps)");
     }
 
     // ============ USER DEPOSIT/WITHDRAW TESTS ============
@@ -641,7 +666,7 @@ contract DeployScriptTest is Test {
 
     function testVaultOperations() public {
         deal(USDS, deployer, 2e18);
-        deal(ST_USDS, deployer, 2e18); // stUSDS for dead collateral
+        deal(ST_USDS, deployer, 3e18); // stUSDS for dead collateral (2.1e18 needed)
         result = deployScript.run();
         vault = IVaultV2(result.vaultV2);
 

@@ -54,8 +54,8 @@ contract DeployUSDSVaultV2 is Script, StdCheats {
     // Params
     uint256 constant LLTV = 860000000000000000; // 86%
     uint256 constant INITIAL_DEAD_DEPOSIT = 1e18; // 1 USDS
-    uint256 constant INITIAL_DEAD_COLLATERAL = 1e18; // 1 stUSDS
-    uint256 constant DEAD_BORROW_AMOUNT = 8e17; // 0.8 USDS for 80% utilization (safe margin for stUSDS appreciation)
+    uint256 constant INITIAL_DEAD_COLLATERAL = 21e17; // 2.1 stUSDS (needed to borrow 1.8 USDS at 86% LLTV with ~1.03 stUSDS/USDS rate)
+    uint256 constant DEAD_BORROW_AMOUNT = 18e17; // 1.8 USDS for 90% utilization (totalBorrow/totalSupply = 1.8/2 = 90%)
     uint256 constant MAX_RATE = 63419583967; // 200% APR Cap (200e16 / 365 days)
     uint256 constant TIMELOCK_LOW = 3 days;
     uint256 constant TIMELOCK_HIGH = 7 days;
@@ -203,9 +203,10 @@ contract DeployUSDSVaultV2 is Script, StdCheats {
         morpho.supplyCollateral(params, INITIAL_DEAD_COLLATERAL, deployer, bytes(""));
         console.log("Dead collateral supply to morpho market executed.");
 
-        // D. Borrow USDS to create initial utilization (deployer takes debt, USDS sent to 0xdEaD)
-        morpho.borrow(params, DEAD_BORROW_AMOUNT, 0, deployer, address(0xdEaD));
-        console.log("Dead borrow executed for 80% utilization.");
+        // D. Borrow USDS to create initial utilization (deployer takes debt, USDS sent back to deployer)
+        // This allows deployer to recover 1.8 USDS, reducing net cost (2 USDS deposited - 1.8 USDS borrowed back = 0.2 USDS net)
+        morpho.borrow(params, DEAD_BORROW_AMOUNT, 0, deployer, deployer);
+        console.log("Dead borrow executed for 90% utilization (USDS sent to deployer).");
 
         // --- Step 7: Timelocks  ---
         // Configure Granular Timelocks

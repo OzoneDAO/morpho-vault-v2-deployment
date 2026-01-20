@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
+import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 
 /**
  * @title DeployedVaultTest
@@ -15,7 +16,10 @@ contract DeployedVaultTest is Test {
 
     // Constants
     address public constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
+    address public constant ST_USDS = 0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9;
     address public constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
+    address public constant IRM_ADAPTIVE = 0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC;
+    uint256 public constant LLTV = 860000000000000000; // 86%
 
     uint256 public constant TIMELOCK_LOW = 3 days;
     uint256 public constant TIMELOCK_HIGH = 7 days;
@@ -190,6 +194,34 @@ contract DeployedVaultTest is Test {
 
         console.log("Dead address shares:", deadShares);
         assertGt(deadShares, 0, "Dead address should have shares");
+    }
+
+    function testMorphoMarketUtilizationIs90Percent() public view {
+        console.log("=== Morpho Market Utilization ===");
+
+        // Get market params from vault's liquidity data (set during deployment)
+        bytes memory liquidityData = vault.liquidityData();
+        require(liquidityData.length > 0, "Vault has no liquidity data set");
+
+        MarketParams memory params = abi.decode(liquidityData, (MarketParams));
+        console.log("Oracle (from vault):", params.oracle);
+
+        Id marketId = Id.wrap(keccak256(abi.encode(params)));
+        IMorpho morpho = IMorpho(MORPHO_BLUE);
+
+        // Get market state
+        Market memory marketState = morpho.market(marketId);
+
+        console.log("Market totalSupplyAssets:", marketState.totalSupplyAssets);
+        console.log("Market totalBorrowAssets:", marketState.totalBorrowAssets);
+
+        // Verify utilization is 90%
+        // utilization = totalBorrowAssets / totalSupplyAssets
+        // 1.8e18 / 2e18 = 90%
+        uint256 utilizationBps = (uint256(marketState.totalBorrowAssets) * 10000) / uint256(marketState.totalSupplyAssets);
+        console.log("Utilization (bps):", utilizationBps);
+
+        assertEq(utilizationBps, 9000, "Market utilization should be 90% (9000 bps)");
     }
 
     function testMaxRate() public view {
