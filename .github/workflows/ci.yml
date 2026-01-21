@@ -17,7 +17,7 @@ jobs:
       SENTINEL: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
       VAULT_NAME: "sky.money USDS Risk Capital"
       VAULT_SYMBOL: "skyMoneyUsdsRiskCapital"
-      VAULT_ADDRESS: ""
+      VAULT_ADDRESS: "0xf42bca228D9bd3e2F8EE65Fec3d21De1063882d4"
 
     steps:
       - uses: actions/checkout@v4
@@ -34,9 +34,9 @@ jobs:
           forge test --match-contract DeployScriptTest --fork-url http://localhost:8545 -vvvv
           pkill anvil
 
-      # - name: Run deployed vault tests
-      #   run: |
-      #     anvil --fork-url ${{ secrets.RPC_URL }} &
-      #     sleep 5
-      #     forge test --match-contract DeployedVaultTest --fork-url http://localhost:8545 -vvvv
-      #     pkill anvil
+      - name: Run deployed vault tests
+        run: |
+          anvil --fork-url ${{ secrets.RPC_URL }} &
+          sleep 5
+          forge test --match-contract DeployedVaultTest --fork-url http://localhost:8545 -vvvv
+          pkill anvil
