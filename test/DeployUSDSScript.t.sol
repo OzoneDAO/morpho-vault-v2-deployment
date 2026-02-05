@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 import {console} from "forge-std/Test.sol";
-import {DeployUSDSVaultV2} from "../script/DeployUSDSVaultV2.s.sol";
+import {DeployUSDSVaultV2} from "../script/usds/DeployUSDSVaultV2.s.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 

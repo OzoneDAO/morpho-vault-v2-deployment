@@ -314,18 +314,19 @@ abstract contract BaseVaultTest is Test {
     }
 
     function testOnlyAllocatorCanAllocate() public {
-        // Explicitly deploy with deployer as allocator to avoid .env interference
-        _deployVaultWithRoles(deployer, deployer, deployer, address(0));
+        _deployVault();
 
-        // Verify the deployer IS an allocator
-        assertTrue(vault.isAllocator(deployer), "Deployer should be allocator");
+        // Get the actual allocator from env (may be deployer or custom address from .env)
+        address expectedAllocator = vm.envOr("ALLOCATOR", deployer);
 
-        // Verify that allocate succeeds when called BY an allocator (with valid but small amount)
-        // The USDS vault has liquidity adapter set so allocate with empty data will auto-allocate
-        // For Flagship vault without liquidity adapter, we skip this part of the test
+        // Verify the expected allocator IS an allocator
+        assertTrue(vault.isAllocator(expectedAllocator), "Expected allocator should have allocator role");
 
-        // NOTE: Authorization check for non-allocator is implicitly tested by other tests
-        // like testRoleTransferToCustomAddresses which verifies allocator role is properly set
+        // Verify non-allocator cannot allocate
+        address notAllocator = makeAddr("notAllocator");
+        assertFalse(vault.isAllocator(notAllocator), "Random address should not be allocator");
+
+        // NOTE: Full allocation functionality is tested in vault-specific tests
     }
 
     // ============ VAULT METADATA TESTS ============

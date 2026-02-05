@@ -16,19 +16,25 @@ This repository deploys two USDS-based Morpho vaults with different strategies:
 ```
 .
 ├── script/
-│   ├── DeployUSDSVaultV2.s.sol      # Single-market USDS vault
-│   └── DeployFlagshipVaultV2.s.sol  # Multi-market Flagship vault
+│   ├── usds/
+│   │   └── DeployUSDSVaultV2.s.sol       # Single-market USDS vault (1 script)
+│   └── flagship/
+│       ├── 1_CreateVault.s.sol           # Deploy vault + adapter
+│       ├── 2_CreateCbBtcMarket.s.sol     # Create cbBTC/USDS market
+│       ├── 3_CreateWstEthMarket.s.sol    # Create wstETH/USDS market
+│       ├── 4_CreateWethMarket.s.sol      # Create WETH/USDS market
+│       └── 5_ConfigureVault.s.sol        # Configure caps, timelocks, ownership
 ├── src/lib/
-│   ├── Constants.sol                 # Mainnet addresses & parameters
-│   └── DeployHelpers.sol             # Shared deployment utilities
+│   ├── Constants.sol                      # Mainnet addresses & parameters
+│   └── DeployHelpers.sol                  # Shared deployment utilities
 ├── test/
-│   ├── DeployUSDSScript.t.sol        # USDS vault tests
-│   ├── DeployFlagshipScript.t.sol    # Flagship vault tests
-│   └── base/BaseVaultTest.sol        # Shared test suite
+│   ├── DeployUSDSScript.t.sol             # USDS vault tests
+│   ├── DeployFlagshipScript.t.sol         # Flagship vault tests
+│   └── base/BaseVaultTest.sol             # Shared test suite
 └── bot/
-    ├── src/allocator.ts              # Allocator bot for Flagship vault
-    ├── DEPLOYMENT_SEQUENCE.md        # Deployment order documentation
-    └── README.md                     # Bot documentation
+    ├── src/allocator.ts                   # Allocator bot for Flagship vault
+    ├── DEPLOYMENT_SEQUENCE.md             # Deployment order documentation
+    └── README.md                          # Bot documentation
 ```
 
 ## Vaults
@@ -38,6 +44,7 @@ This repository deploys two USDS-based Morpho vaults with different strategies:
 - **Purpose**: Simple vault that auto-allocates deposits to stUSDS/USDS Morpho market
 - **Liquidity Adapter**: Set to auto-allocate on deposit
 - **Market**: stUSDS/USDS (86% LLTV, ERC4626-based oracle)
+- **Deployment**: Single script
 
 ### Flagship Vault (Multi-Market)
 
@@ -45,11 +52,12 @@ This repository deploys two USDS-based Morpho vaults with different strategies:
 - **Strategy**: 80% idle (earns SSR via Merkl), 20% allocated to markets
 - **No Liquidity Adapter**: Deposits stay idle; allocator bot manages allocation
 - **Markets** (all 86% LLTV):
-  - stUSDS/USDS (existing market)
+  - stUSDS/USDS (existing market from USDS vault)
   - cbBTC/USDS (new market)
   - wstETH/USDS (new market)
   - WETH/USDS (new market)
 - **Caps**: 20% max to adapter, 5% max per market
+- **Deployment**: 5 sequential scripts
 
 ## Installation
 
@@ -106,26 +114,53 @@ VAULT_NAME="Custom Vault Name"
 VAULT_SYMBOL="customVaultSymbol"
 ```
 
-### Deploy USDS Vault
+### Deploy USDS Vault (Single Script)
 
 ```bash
 source .env
-forge script script/DeployUSDSVaultV2.s.sol \
+forge script script/usds/DeployUSDSVaultV2.s.sol \
   --rpc-url $RPC_URL \
   --broadcast \
   --slow \
   --gas-estimate-multiplier 200
 ```
 
-### Deploy Flagship Vault
+### Deploy Flagship Vault (5 Scripts)
+
+The Flagship vault deployment is split into 5 sequential scripts for better control and verification:
 
 ```bash
 source .env
-forge script script/DeployFlagshipVaultV2.s.sol \
-  --rpc-url $RPC_URL \
-  --broadcast \
-  --slow \
-  --gas-estimate-multiplier 200
+
+# Step 1: Create Vault and Adapter
+forge script script/flagship/1_CreateVault.s.sol \
+  --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
+
+# Set env vars from output
+export VAULT_ADDRESS=0x...
+export ADAPTER_ADDRESS=0x...
+
+# Step 2: Create cbBTC/USDS Market
+forge script script/flagship/2_CreateCbBtcMarket.s.sol \
+  --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
+
+export ORACLE_CBBTC=0x...
+
+# Step 3: Create wstETH/USDS Market
+forge script script/flagship/3_CreateWstEthMarket.s.sol \
+  --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
+
+export ORACLE_WSTETH=0x...
+
+# Step 4: Create WETH/USDS Market
+forge script script/flagship/4_CreateWethMarket.s.sol \
+  --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
+
+export ORACLE_WETH=0x...
+
+# Step 5: Configure Vault (caps, timelocks, ownership)
+forge script script/flagship/5_ConfigureVault.s.sol \
+  --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
 ```
 
 **Note**: The Flagship vault reuses the existing stUSDS/USDS market from the USDS vault deployment.
@@ -181,6 +216,9 @@ cbBTC:   0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf
 MORPHO_BLUE:      0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb
 IRM_ADAPTIVE:     0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC
 ADAPTER_REGISTRY: 0x3696c5eAe4a7Ffd04Ea163564571E9CD8Ed9364e
+
+# Existing stUSDS Oracle (from USDS vault)
+STUSDS_ORACLE:    0x0A976226d113B67Bd42D672Ac9f83f92B44b454C
 ```
 
 ## Deployment Costs

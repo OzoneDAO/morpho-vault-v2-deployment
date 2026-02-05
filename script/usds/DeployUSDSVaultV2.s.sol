@@ -11,8 +11,8 @@ import {VaultV2} from "vault-v2/VaultV2.sol";
 import {VaultV2Factory} from "vault-v2/VaultV2Factory.sol";
 import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
 
-import {Constants} from "../src/lib/Constants.sol";
-import {DeployHelpers, IMorphoChainlinkOracleV2Factory, IMorphoMarketV1AdapterV2Factory} from "../src/lib/DeployHelpers.sol";
+import {Constants} from "../../src/lib/Constants.sol";
+import {DeployHelpers, IMorphoChainlinkOracleV2Factory, IMorphoMarketV1AdapterV2Factory} from "../../src/lib/DeployHelpers.sol";
 
 /**
  * @title DeployUSDSVaultV2

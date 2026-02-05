@@ -2,42 +2,107 @@
 pragma solidity 0.8.28;
 
 import {console} from "forge-std/Test.sol";
-import {DeployFlagshipVaultV2} from "../script/DeployFlagshipVaultV2.s.sol";
+import {MarketParams} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
+
+import {CreateVault} from "../script/flagship/1_CreateVault.s.sol";
+import {CreateCbBtcMarket} from "../script/flagship/2_CreateCbBtcMarket.s.sol";
+import {CreateWstEthMarket} from "../script/flagship/3_CreateWstEthMarket.s.sol";
+import {CreateWethMarket} from "../script/flagship/4_CreateWethMarket.s.sol";
+import {ConfigureVault} from "../script/flagship/5_ConfigureVault.s.sol";
 
 import {Constants} from "../src/lib/Constants.sol";
 import {BaseVaultTest} from "./base/BaseVaultTest.sol";
 
 /**
  * @title DeployFlagshipScriptTest
- * @notice Tests for DeployFlagshipVaultV2 deployment script
+ * @notice Tests for Flagship Vault deployment scripts (5-script sequence)
  * @dev Extends BaseVaultTest for common tests, adds Flagship-specific tests
  *      Tests run on forked mainnet where stUSDS/USDS market already exists
  */
 contract DeployFlagshipScriptTest is BaseVaultTest {
-    DeployFlagshipVaultV2 public deployScript;
-    DeployFlagshipVaultV2.DeploymentResult public result;
+    // Scripts
+    CreateVault public script1;
+    CreateCbBtcMarket public script2;
+    CreateWstEthMarket public script3;
+    CreateWethMarket public script4;
+    ConfigureVault public script5;
+
+    // Deployment results
+    address public vaultAddress;
+    address public adapterAddress;
+    address public oracleCbBtc;
+    address public oracleWstEth;
+    address public oracleWeth;
+
+    // Market IDs
+    bytes32 public marketIdCbBtc;
+    bytes32 public marketIdWstEth;
+    bytes32 public marketIdWeth;
+
+    // Market params
+    MarketParams public paramsCbBtc;
+    MarketParams public paramsWstEth;
+    MarketParams public paramsWeth;
+
+    // Existing stUSDS market
+    address constant EXISTING_STUSDS_ORACLE = 0x0A976226d113B67Bd42D672Ac9f83f92B44b454C;
+    bytes32 constant EXISTING_STUSDS_MARKET_ID = 0x77e624dd9dd980810c2b804249e88f3598d9c7ec91f16aa5fbf6e3fdf6087f82;
 
     uint256 constant ADAPTER_RELATIVE_CAP = 20e16; // 20%
     uint256 constant MARKET_RELATIVE_CAP = 5e16; // 5%
 
     function setUp() public override {
         super.setUp();
-        deployScript = new DeployFlagshipVaultV2();
+        script1 = new CreateVault();
+        script2 = new CreateCbBtcMarket();
+        script3 = new CreateWstEthMarket();
+        script4 = new CreateWethMarket();
+        script5 = new ConfigureVault();
     }
 
     function _deployVault() internal override {
-        // Deal USDS for vault dead deposit + market seeding (3 markets x 1 USDS each)
+        // Deal tokens for all scripts
         deal(Constants.USDS, deployer, 10e18);
+        deal(Constants.WSTETH, deployer, 1e15);
+        deal(Constants.WETH, deployer, 1e15);
+        deal(Constants.CBBTC, deployer, 10000);
 
-        // Deal collateral tokens for market seeding
-        deal(Constants.WSTETH, deployer, 1e15); // 0.001 wstETH
-        deal(Constants.WETH, deployer, 1e15); // 0.001 WETH
-        deal(Constants.CBBTC, deployer, 10000); // 0.0001 cbBTC (8 decimals)
+        // Script 1: Create Vault
+        CreateVault.DeploymentResult memory result1 = script1.run();
+        vaultAddress = result1.vaultV2;
+        adapterAddress = result1.adapter;
 
-        result = deployScript.run();
-        vault = IVaultV2(result.vaultV2);
+        // Set env vars for subsequent scripts
+        vm.setEnv("VAULT_ADDRESS", vm.toString(vaultAddress));
+        vm.setEnv("ADAPTER_ADDRESS", vm.toString(adapterAddress));
+
+        // Script 2: Create cbBTC Market
+        CreateCbBtcMarket.DeploymentResult memory result2 = script2.run();
+        oracleCbBtc = result2.oracle;
+        marketIdCbBtc = result2.marketId;
+        paramsCbBtc = result2.params;
+        vm.setEnv("ORACLE_CBBTC", vm.toString(oracleCbBtc));
+
+        // Script 3: Create wstETH Market
+        CreateWstEthMarket.DeploymentResult memory result3 = script3.run();
+        oracleWstEth = result3.oracle;
+        marketIdWstEth = result3.marketId;
+        paramsWstEth = result3.params;
+        vm.setEnv("ORACLE_WSTETH", vm.toString(oracleWstEth));
+
+        // Script 4: Create WETH Market
+        CreateWethMarket.DeploymentResult memory result4 = script4.run();
+        oracleWeth = result4.oracle;
+        marketIdWeth = result4.marketId;
+        paramsWeth = result4.params;
+        vm.setEnv("ORACLE_WETH", vm.toString(oracleWeth));
+
+        // Script 5: Configure Vault
+        script5.run();
+
+        vault = IVaultV2(vaultAddress);
     }
 
     function _deployVaultWithRoles(
@@ -59,49 +124,44 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
     function testRunScript() public {
         _deployVault();
 
-        console.log("Flagship VaultV2 Address:", result.vaultV2);
-        console.log("Adapter Address:", result.adapter);
-        console.log("Oracle stUSDS/USDS:", result.oracleStUsds);
-        console.log("Oracle cbBTC/USDS:", result.oracleCbBtc);
-        console.log("Oracle wstETH/USDS:", result.oracleWstEth);
-        console.log("Oracle WETH/USDS:", result.oracleWeth);
+        console.log("Flagship VaultV2 Address:", vaultAddress);
+        console.log("Adapter Address:", adapterAddress);
+        console.log("Oracle stUSDS/USDS:", EXISTING_STUSDS_ORACLE);
+        console.log("Oracle cbBTC/USDS:", oracleCbBtc);
+        console.log("Oracle wstETH/USDS:", oracleWstEth);
+        console.log("Oracle WETH/USDS:", oracleWeth);
 
-        assertTrue(result.vaultV2 != address(0), "VaultV2 address should not be zero");
-        assertTrue(result.adapter != address(0), "Adapter address should not be zero");
-        assertTrue(result.oracleStUsds != address(0), "Oracle stUSDS should not be zero");
-        assertTrue(result.oracleCbBtc != address(0), "Oracle cbBTC should not be zero");
-        assertTrue(result.oracleWstEth != address(0), "Oracle wstETH should not be zero");
-        assertTrue(result.oracleWeth != address(0), "Oracle WETH should not be zero");
+        assertTrue(vaultAddress != address(0), "VaultV2 address should not be zero");
+        assertTrue(adapterAddress != address(0), "Adapter address should not be zero");
+        assertTrue(oracleCbBtc != address(0), "Oracle cbBTC should not be zero");
+        assertTrue(oracleWstEth != address(0), "Oracle wstETH should not be zero");
+        assertTrue(oracleWeth != address(0), "Oracle WETH should not be zero");
     }
 
     function testFourMarketsCreated() public {
         _deployVault();
 
-        assertTrue(result.marketIdStUsds != bytes32(0), "stUSDS market should exist");
-        assertTrue(result.marketIdCbBtc != bytes32(0), "cbBTC market should exist");
-        assertTrue(result.marketIdWstEth != bytes32(0), "wstETH market should exist");
-        assertTrue(result.marketIdWeth != bytes32(0), "WETH market should exist");
+        assertTrue(marketIdCbBtc != bytes32(0), "cbBTC market should exist");
+        assertTrue(marketIdWstEth != bytes32(0), "wstETH market should exist");
+        assertTrue(marketIdWeth != bytes32(0), "WETH market should exist");
 
-        console.log("Market ID stUSDS:", vm.toString(result.marketIdStUsds));
-        console.log("Market ID cbBTC:", vm.toString(result.marketIdCbBtc));
-        console.log("Market ID wstETH:", vm.toString(result.marketIdWstEth));
-        console.log("Market ID WETH:", vm.toString(result.marketIdWeth));
+        console.log("Market ID stUSDS:", vm.toString(EXISTING_STUSDS_MARKET_ID));
+        console.log("Market ID cbBTC:", vm.toString(marketIdCbBtc));
+        console.log("Market ID wstETH:", vm.toString(marketIdWstEth));
+        console.log("Market ID WETH:", vm.toString(marketIdWeth));
     }
 
     function testMarketParamsExported() public {
         _deployVault();
 
-        assertEq(result.paramsStUsds.loanToken, Constants.USDS, "stUSDS market loan token should be USDS");
-        assertEq(result.paramsStUsds.collateralToken, Constants.ST_USDS, "stUSDS market collateral should be ST_USDS");
+        assertEq(paramsCbBtc.loanToken, Constants.USDS, "cbBTC market loan token should be USDS");
+        assertEq(paramsCbBtc.collateralToken, Constants.CBBTC, "cbBTC market collateral should be CBBTC");
 
-        assertEq(result.paramsCbBtc.loanToken, Constants.USDS, "cbBTC market loan token should be USDS");
-        assertEq(result.paramsCbBtc.collateralToken, Constants.CBBTC, "cbBTC market collateral should be CBBTC");
+        assertEq(paramsWstEth.loanToken, Constants.USDS, "wstETH market loan token should be USDS");
+        assertEq(paramsWstEth.collateralToken, Constants.WSTETH, "wstETH market collateral should be WSTETH");
 
-        assertEq(result.paramsWstEth.loanToken, Constants.USDS, "wstETH market loan token should be USDS");
-        assertEq(result.paramsWstEth.collateralToken, Constants.WSTETH, "wstETH market collateral should be WSTETH");
-
-        assertEq(result.paramsWeth.loanToken, Constants.USDS, "WETH market loan token should be USDS");
-        assertEq(result.paramsWeth.collateralToken, Constants.WETH, "WETH market collateral should be WETH");
+        assertEq(paramsWeth.loanToken, Constants.USDS, "WETH market loan token should be USDS");
+        assertEq(paramsWeth.collateralToken, Constants.WETH, "WETH market collateral should be WETH");
     }
 
     // ============ NO LIQUIDITY ADAPTER TESTS ============
@@ -129,7 +189,7 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
         uint256 vaultBalance = usds.balanceOf(address(vault));
         assertEq(vaultBalance, depositAmount + Constants.INITIAL_DEAD_DEPOSIT, "All deposits should be idle in vault");
 
-        IMorphoMarketV1AdapterV2 adapter = IMorphoMarketV1AdapterV2(result.adapter);
+        IMorphoMarketV1AdapterV2 adapter = IMorphoMarketV1AdapterV2(adapterAddress);
         assertEq(adapter.realAssets(), 0, "Adapter should have 0 assets (no allocation yet)");
     }
 
@@ -142,14 +202,9 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
         assertTrue(vault.isAllocator(deployer), "Deployer should be allocator");
 
         // Verify caps are set for the adapter
-        bytes memory adapterIdData = abi.encode("this", result.adapter);
+        bytes memory adapterIdData = abi.encode("this", adapterAddress);
         bytes32 adapterCapId = keccak256(adapterIdData);
         assertGt(vault.relativeCap(adapterCapId), 0, "Adapter relative cap should be set");
-
-        // Verify caps are set for the stUSDS market
-        bytes memory marketIdData = abi.encode("this/marketParams", result.adapter, result.paramsStUsds);
-        bytes32 marketCapId = keccak256(marketIdData);
-        assertGt(vault.relativeCap(marketCapId), 0, "Market relative cap should be set");
     }
 
     function testCapsConfiguredForAllMarkets() public {
@@ -176,7 +231,7 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
 
         vm.prank(notAllocator);
         vm.expectRevert();
-        vault.deallocate(result.adapter, "", 100);
+        vault.deallocate(adapterAddress, "", 100);
     }
 
     // ============ 80% IDLE STRATEGY TESTS ============
@@ -223,11 +278,20 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
         vault.deposit(depositAmount, user);
         vm.stopPrank();
 
+        // Build stUSDS market params
+        MarketParams memory paramsStUsds = MarketParams({
+            loanToken: Constants.USDS,
+            collateralToken: Constants.ST_USDS,
+            oracle: EXISTING_STUSDS_ORACLE,
+            irm: Constants.IRM_ADAPTIVE,
+            lltv: Constants.LLTV_STUSDS
+        });
+
         uint256 overAllocation = (depositAmount + Constants.INITIAL_DEAD_DEPOSIT) * 6 / 100; // 6% > 5% cap
 
         vm.prank(deployer);
         vm.expectRevert();
-        vault.allocate(result.adapter, abi.encode(result.paramsStUsds), overAllocation);
+        vault.allocate(adapterAddress, abi.encode(paramsStUsds), overAllocation);
     }
 
     // ============ INTEGRATION TEST ============
@@ -241,7 +305,7 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
 
         // Verify adapter is properly registered
         assertEq(vault.adaptersLength(), 1, "Should have exactly 1 adapter");
-        assertTrue(vault.isAdapter(result.adapter), "Adapter should be registered");
+        assertTrue(vault.isAdapter(adapterAddress), "Adapter should be registered");
 
         // Verify adapter registry is set
         assertEq(vault.adapterRegistry(), Constants.ADAPTER_REGISTRY, "Adapter registry should be set");
