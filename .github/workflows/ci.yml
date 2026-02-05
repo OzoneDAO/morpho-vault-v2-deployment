@@ -6,15 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  # Shared environment variables
+  OWNER: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
+  CURATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
+  ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
+  SENTINEL: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
+
 jobs:
-  test:
+  # ============ USDS Vault Tests ============
+  test-usds-vault:
+    name: USDS Vault Tests
     runs-on: ubuntu-latest
 
     env:
-      OWNER: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-      CURATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-      SENTINEL: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
       VAULT_NAME: "sky.money USDS Risk Capital"
       VAULT_SYMBOL: "skyMoneyUsdsRiskCapital"
       VAULT_ADDRESS: "0xf42bca228D9bd3e2F8EE65Fec3d21De1063882d4"
@@ -28,10 +33,38 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Run deploy script tests
+      - name: Run USDS vault deployment tests
         run: |
           forge test --match-contract DeployUSDSScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
-      - name: Run deployed vault tests
+      - name: Run USDS vault deployed tests
         run: |
           forge test --match-contract DeployedUSDSVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDS_BLOCK_NUMBER }} -vvvv
+
+  # ============ Flagship Vault Tests ============
+  test-flagship-vault:
+    name: Flagship Vault Tests
+    runs-on: ubuntu-latest
+
+    env:
+      VAULT_NAME: "sky.money USDS Flagship Capital"
+      VAULT_SYMBOL: "skyMoneyUsdsFlagshipCapital"
+      # VAULT_ADDRESS: ""
+      # FLAGSHIP_BLOCK_NUMBER: 0
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run Flagship vault deployment tests
+        run: |
+          forge test --match-contract DeployFlagshipScript --fork-url ${{ secrets.RPC_URL }} -vvvv
+
+      # Uncomment after Flagship vault is deployed
+      # - name: Run Flagship vault deployed tests
+      #   run: |
+      #     forge test --match-contract DeployedFlagshipVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.FLAGSHIP_BLOCK_NUMBER }} -vvvv

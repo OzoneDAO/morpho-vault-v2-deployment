@@ -1,0 +1,456 @@
+/**
+ * Flagship Vault V2 Allocator Bot
+ *
+ * This bot maintains the 80% idle / 20% allocated strategy for the Flagship USDS Vault.
+ * It allocates 5% to each of 4 markets: stUSDS, cbBTC, wstETH, WETH (all with USDS as loan token).
+ *
+ * Run as a cronjob (e.g., every hour):
+ *   0 * * * * cd /path/to/bot && npm run allocate >> /var/log/allocator.log 2>&1
+ *
+ * Environment Variables (see .env.example):
+ *   - RPC_URL: Ethereum RPC endpoint
+ *   - PRIVATE_KEY: Allocator's private key
+ *   - VAULT_ADDRESS: Flagship Vault V2 address
+ *   - ADAPTER_ADDRESS: MorphoMarketV1AdapterV2 address
+ *   - MARKET_PARAMS_*: Encoded market params for each market
+ */
+
+import { createPublicClient, createWalletClient, http, formatEther, parseEther, encodeFunctionData, type Address, type Hex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { mainnet } from 'viem/chains';
+import 'dotenv/config';
+
+// ============ CONFIGURATION ============
+
+const config = {
+  rpcUrl: process.env.RPC_URL || 'https://eth.llamarpc.com',
+  privateKey: process.env.PRIVATE_KEY as Hex,
+  vaultAddress: process.env.VAULT_ADDRESS as Address,
+  adapterAddress: process.env.ADAPTER_ADDRESS as Address,
+
+  // Target allocation percentages (in basis points, 10000 = 100%)
+  targetIdlePercent: 8000, // 80%
+  targetAllocatedPercent: 2000, // 20%
+  targetPerMarketPercent: 500, // 5% each
+
+  // Rebalance threshold - only rebalance if deviation exceeds this (in basis points)
+  rebalanceThresholdBps: 100, // 1%
+
+  // Minimum allocation amount (to avoid dust transactions)
+  minAllocationAmount: parseEther('100'), // 100 USDS minimum
+
+  // Dry run mode (set to true to simulate without executing)
+  dryRun: process.env.DRY_RUN === 'true',
+};
+
+// Market configurations - loaded from environment
+interface MarketConfig {
+  name: string;
+  collateral: Address;
+  oracle: Address;
+  lltv: bigint;
+  encodedParams?: Hex;
+}
+
+// All markets use 86% LLTV per BA Labs recommendation (02/02/2026)
+const LLTV_86_PERCENT = '860000000000000000';
+
+// Existing stUSDS oracle from USDS vault deployment
+const EXISTING_STUSDS_ORACLE = '0x0A976226d113B67Bd42D672Ac9f83f92B44b454C';
+
+const markets: MarketConfig[] = [
+  {
+    name: 'stUSDS/USDS',
+    collateral: '0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9' as Address,
+    oracle: (process.env.ORACLE_STUSDS || EXISTING_STUSDS_ORACLE) as Address,
+    lltv: BigInt(process.env.LLTV_STUSDS || LLTV_86_PERCENT),
+  },
+  {
+    name: 'cbBTC/USDS',
+    collateral: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf' as Address,
+    oracle: (process.env.ORACLE_CBBTC || '0x0') as Address,
+    lltv: BigInt(process.env.LLTV_CBBTC || LLTV_86_PERCENT),
+  },
+  {
+    name: 'wstETH/USDS',
+    collateral: '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0' as Address,
+    oracle: (process.env.ORACLE_WSTETH || '0x0') as Address,
+    lltv: BigInt(process.env.LLTV_WSTETH || LLTV_86_PERCENT),
+  },
+  {
+    name: 'WETH/USDS',
+    collateral: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' as Address,
+    oracle: (process.env.ORACLE_WETH || '0x0') as Address,
+    lltv: BigInt(process.env.LLTV_WETH || LLTV_86_PERCENT),
+  },
+];
+
+// Constants
+const USDS = '0xdC035D45d973E3EC169d2276DDab16f1e407384F' as Address;
+const IRM_ADAPTIVE = '0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC' as Address;
+
+// ============ ABIs ============
+
+const vaultAbi = [
+  {
+    name: 'totalAssets',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'isAllocator',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    name: 'allocate',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'adapter', type: 'address' },
+      { name: 'data', type: 'bytes' },
+      { name: 'assets', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    name: 'deallocate',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'adapter', type: 'address' },
+      { name: 'data', type: 'bytes' },
+      { name: 'assets', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const adapterAbi = [
+  {
+    name: 'realAssets',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'marketIdsLength',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'marketIds',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'index', type: 'uint256' }],
+    outputs: [{ type: 'bytes32' }],
+  },
+  {
+    name: 'expectedSupplyAssets',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'marketId', type: 'bytes32' }],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const;
+
+const erc20Abi = [
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+] as const;
+
+// ============ HELPERS ============
+
+function encodeMarketParams(market: MarketConfig): Hex {
+  // MarketParams struct: (loanToken, collateralToken, oracle, irm, lltv)
+  // This matches the Solidity struct encoding
+  const encoded = encodeFunctionData({
+    abi: [{
+      name: 'encode',
+      type: 'function',
+      inputs: [{
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'loanToken', type: 'address' },
+          { name: 'collateralToken', type: 'address' },
+          { name: 'oracle', type: 'address' },
+          { name: 'irm', type: 'address' },
+          { name: 'lltv', type: 'uint256' },
+        ],
+      }],
+      outputs: [],
+    }],
+    functionName: 'encode',
+    args: [{
+      loanToken: USDS,
+      collateralToken: market.collateral,
+      oracle: market.oracle,
+      irm: IRM_ADAPTIVE,
+      lltv: market.lltv,
+    }],
+  });
+
+  // Remove the function selector (first 4 bytes / 10 hex chars including 0x)
+  return `0x${encoded.slice(10)}` as Hex;
+}
+
+function computeMarketId(market: MarketConfig): Hex {
+  const params = encodeMarketParams(market);
+  // In production, you'd compute keccak256 of the encoded params
+  // For now, we'll rely on the adapter's tracking
+  return params;
+}
+
+function log(message: string, data?: unknown) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${message}`);
+  if (data !== undefined) {
+    console.log(JSON.stringify(data, (_, v) => typeof v === 'bigint' ? v.toString() : v, 2));
+  }
+}
+
+// ============ MAIN ALLOCATOR LOGIC ============
+
+async function main() {
+  log('=== Flagship Vault Allocator Bot ===');
+  log(`Mode: ${config.dryRun ? 'DRY RUN' : 'LIVE'}`);
+
+  // Validate configuration
+  if (!config.privateKey) {
+    throw new Error('PRIVATE_KEY environment variable is required');
+  }
+  if (!config.vaultAddress) {
+    throw new Error('VAULT_ADDRESS environment variable is required');
+  }
+  if (!config.adapterAddress) {
+    throw new Error('ADAPTER_ADDRESS environment variable is required');
+  }
+
+  // Create clients
+  const account = privateKeyToAccount(config.privateKey);
+  const publicClient = createPublicClient({
+    chain: mainnet,
+    transport: http(config.rpcUrl),
+  });
+  const walletClient = createWalletClient({
+    account,
+    chain: mainnet,
+    transport: http(config.rpcUrl),
+  });
+
+  log(`Allocator address: ${account.address}`);
+  log(`Vault address: ${config.vaultAddress}`);
+  log(`Adapter address: ${config.adapterAddress}`);
+
+  // Check if we're an allocator
+  const isAllocator = await publicClient.readContract({
+    address: config.vaultAddress,
+    abi: vaultAbi,
+    functionName: 'isAllocator',
+    args: [account.address],
+  });
+
+  if (!isAllocator) {
+    throw new Error(`Account ${account.address} is not an allocator for this vault`);
+  }
+  log('Allocator permission verified');
+
+  // Get current state
+  const [totalAssets, adapterAssets, vaultIdleBalance] = await Promise.all([
+    publicClient.readContract({
+      address: config.vaultAddress,
+      abi: vaultAbi,
+      functionName: 'totalAssets',
+    }),
+    publicClient.readContract({
+      address: config.adapterAddress,
+      abi: adapterAbi,
+      functionName: 'realAssets',
+    }),
+    publicClient.readContract({
+      address: USDS,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [config.vaultAddress],
+    }),
+  ]);
+
+  log('Current vault state:', {
+    totalAssets: formatEther(totalAssets),
+    adapterAssets: formatEther(adapterAssets),
+    vaultIdleBalance: formatEther(vaultIdleBalance),
+    currentAllocationPercent: totalAssets > 0n
+      ? Number((adapterAssets * 10000n) / totalAssets) / 100
+      : 0,
+  });
+
+  // Calculate target allocations
+  const targetTotalAllocated = (totalAssets * BigInt(config.targetAllocatedPercent)) / 10000n;
+  const targetPerMarket = (totalAssets * BigInt(config.targetPerMarketPercent)) / 10000n;
+
+  log('Target allocations:', {
+    targetTotalAllocated: formatEther(targetTotalAllocated),
+    targetPerMarket: formatEther(targetPerMarket),
+    targetIdlePercent: config.targetIdlePercent / 100,
+  });
+
+  // Check if rebalancing is needed
+  const allocationDiff = adapterAssets > targetTotalAllocated
+    ? adapterAssets - targetTotalAllocated
+    : targetTotalAllocated - adapterAssets;
+
+  const deviationBps = totalAssets > 0n
+    ? Number((allocationDiff * 10000n) / totalAssets)
+    : 0;
+
+  log(`Current deviation: ${deviationBps / 100}% (threshold: ${config.rebalanceThresholdBps / 100}%)`);
+
+  if (deviationBps < config.rebalanceThresholdBps) {
+    log('Allocation within threshold, no rebalancing needed');
+    return;
+  }
+
+  // Determine allocation actions for each market
+  const actions: Array<{
+    market: MarketConfig;
+    action: 'allocate' | 'deallocate';
+    amount: bigint;
+  }> = [];
+
+  for (const market of markets) {
+    // Skip if oracle not configured
+    if (market.oracle === '0x0') {
+      log(`Skipping ${market.name}: oracle not configured`);
+      continue;
+    }
+
+    const encodedParams = encodeMarketParams(market);
+    market.encodedParams = encodedParams;
+
+    // For simplicity, we'll allocate equal amounts to each market
+    // In production, you might want to track per-market allocation and rebalance individually
+
+    // Calculate how much to allocate to reach target
+    // Since we can't easily query per-market allocation without market IDs from deployment,
+    // we'll do a simple proportional allocation
+
+    const currentTotalAllocated = adapterAssets;
+    const numMarkets = markets.filter(m => m.oracle !== '0x0').length;
+    const targetPerConfiguredMarket = targetTotalAllocated / BigInt(numMarkets);
+
+    // For simplicity, assume equal distribution and allocate the difference
+    const perMarketAllocation = currentTotalAllocated / BigInt(numMarkets || 1);
+    const diff = targetPerConfiguredMarket > perMarketAllocation
+      ? targetPerConfiguredMarket - perMarketAllocation
+      : 0n;
+
+    if (diff >= config.minAllocationAmount) {
+      actions.push({
+        market,
+        action: 'allocate',
+        amount: diff,
+      });
+    }
+  }
+
+  // If we need to deallocate (over-allocated), handle that
+  if (adapterAssets > targetTotalAllocated) {
+    const excessAmount = adapterAssets - targetTotalAllocated;
+    const numMarkets = markets.filter(m => m.oracle !== '0x0').length;
+    const deallocatePerMarket = excessAmount / BigInt(numMarkets || 1);
+
+    if (deallocatePerMarket >= config.minAllocationAmount) {
+      // Clear allocate actions and add deallocate actions
+      actions.length = 0;
+      for (const market of markets) {
+        if (market.oracle === '0x0') continue;
+        market.encodedParams = encodeMarketParams(market);
+        actions.push({
+          market,
+          action: 'deallocate',
+          amount: deallocatePerMarket,
+        });
+      }
+    }
+  }
+
+  if (actions.length === 0) {
+    log('No actions needed (amounts below minimum threshold)');
+    return;
+  }
+
+  log(`Executing ${actions.length} allocation actions:`);
+
+  for (const { market, action, amount } of actions) {
+    log(`  ${action} ${formatEther(amount)} USDS to ${market.name}`);
+
+    if (config.dryRun) {
+      log('  [DRY RUN] Skipping transaction');
+      continue;
+    }
+
+    try {
+      const functionName = action === 'allocate' ? 'allocate' : 'deallocate';
+
+      const hash = await walletClient.writeContract({
+        address: config.vaultAddress,
+        abi: vaultAbi,
+        functionName,
+        args: [config.adapterAddress, market.encodedParams!, amount],
+      });
+
+      log(`  Transaction submitted: ${hash}`);
+
+      // Wait for confirmation
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      log(`  Confirmed in block ${receipt.blockNumber}, status: ${receipt.status}`);
+    } catch (error) {
+      log(`  ERROR: ${error instanceof Error ? error.message : String(error)}`);
+      // Continue with other actions even if one fails
+    }
+  }
+
+  // Log final state
+  const [finalAdapterAssets, finalIdleBalance] = await Promise.all([
+    publicClient.readContract({
+      address: config.adapterAddress,
+      abi: adapterAbi,
+      functionName: 'realAssets',
+    }),
+    publicClient.readContract({
+      address: USDS,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [config.vaultAddress],
+    }),
+  ]);
+
+  log('Final vault state:', {
+    adapterAssets: formatEther(finalAdapterAssets),
+    vaultIdleBalance: formatEther(finalIdleBalance),
+    allocationPercent: totalAssets > 0n
+      ? Number((finalAdapterAssets * 10000n) / totalAssets) / 100
+      : 0,
+  });
+
+  log('=== Allocation complete ===');
+}
+
+// Run
+main().catch((error) => {
+  log('FATAL ERROR:', error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
