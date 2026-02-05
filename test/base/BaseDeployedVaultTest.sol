@@ -4,35 +4,22 @@ pragma solidity 0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
-import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
+import {Constants} from "../../src/lib/Constants.sol";
 
 /**
- * @title DeployedVaultTest
- * @notice Tests against already-deployed contracts on Tenderly or mainnet fork
- * @dev Set VAULT_ADDRESS env var or update the constant below
+ * @title BaseDeployedVaultTest
+ * @notice Base test contract for testing already-deployed vaults
+ * @dev Set VAULT_ADDRESS env var to specify the vault to test
  */
-contract DeployedVaultTest is Test {
-    // ============ DEPLOYED ADDRESSES ============
-
-    // Constants
-    address public constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
-    address public constant ST_USDS = 0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9;
-    address public constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
-    address public constant IRM_ADAPTIVE = 0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC;
-    uint256 public constant LLTV = 860000000000000000; // 86%
-
-    uint256 public constant TIMELOCK_LOW = 3 days;
-    uint256 public constant TIMELOCK_HIGH = 7 days;
-
+abstract contract BaseDeployedVaultTest is Test {
     // State
     IVaultV2 public vault;
     IERC20 public usds;
 
-    function setUp() public {
-        // Allow override via env var
+    function setUp() public virtual {
         address vaultAddr = vm.envOr("VAULT_ADDRESS", address(0));
         vault = IVaultV2(vaultAddr);
-        usds = IERC20(USDS);
+        usds = IERC20(Constants.USDS);
 
         console.log("Testing vault at:", address(vault));
     }
@@ -48,7 +35,7 @@ contract DeployedVaultTest is Test {
         console.log("Total Assets:", vault.totalAssets());
         console.log("Total Supply:", vault.totalSupply());
 
-        assertEq(vault.asset(), USDS, "Asset should be USDS");
+        assertEq(vault.asset(), Constants.USDS, "Asset should be USDS");
     }
 
     function testRoleConfiguration() public view {
@@ -131,10 +118,6 @@ contract DeployedVaultTest is Test {
         console.log("Adapter[0]:", adapter);
         assertTrue(adapter != address(0), "Adapter should be set");
         assertTrue(vault.isAdapter(adapter), "Adapter should be registered");
-
-        address liquidityAdapter = vault.liquidityAdapter();
-        console.log("Liquidity Adapter:", liquidityAdapter);
-        assertEq(liquidityAdapter, adapter, "Liquidity adapter should match first adapter");
     }
 
     function testTimelockConfiguration() public view {
@@ -149,9 +132,9 @@ contract DeployedVaultTest is Test {
         console.log("removeAdapter:", removeAdapterTL);
         console.log("abdicate:", abdicateTL);
 
-        assertEq(increaseTimelockTL, TIMELOCK_HIGH, "increaseTimelock should be 7 days");
-        assertEq(removeAdapterTL, TIMELOCK_HIGH, "removeAdapter should be 7 days");
-        assertEq(abdicateTL, TIMELOCK_HIGH, "abdicate should be 7 days");
+        assertEq(increaseTimelockTL, Constants.TIMELOCK_HIGH, "increaseTimelock should be 7 days");
+        assertEq(removeAdapterTL, Constants.TIMELOCK_HIGH, "removeAdapter should be 7 days");
+        assertEq(abdicateTL, Constants.TIMELOCK_HIGH, "abdicate should be 7 days");
 
         // Low priority (3 days)
         uint256 addAdapterTL = vault.timelock(IVaultV2.addAdapter.selector);
@@ -162,9 +145,9 @@ contract DeployedVaultTest is Test {
         console.log("increaseAbsoluteCap:", increaseAbsoluteCapTL);
         console.log("increaseRelativeCap:", increaseRelativeCapTL);
 
-        assertEq(addAdapterTL, TIMELOCK_LOW, "addAdapter should be 3 days");
-        assertEq(increaseAbsoluteCapTL, TIMELOCK_LOW, "increaseAbsoluteCap should be 3 days");
-        assertEq(increaseRelativeCapTL, TIMELOCK_LOW, "increaseRelativeCap should be 3 days");
+        assertEq(addAdapterTL, Constants.TIMELOCK_LOW, "addAdapter should be 3 days");
+        assertEq(increaseAbsoluteCapTL, Constants.TIMELOCK_LOW, "increaseAbsoluteCap should be 3 days");
+        assertEq(increaseRelativeCapTL, Constants.TIMELOCK_LOW, "increaseRelativeCap should be 3 days");
     }
 
     function testGateAbdication() public view {
@@ -196,34 +179,6 @@ contract DeployedVaultTest is Test {
         assertGt(deadShares, 0, "Dead address should have shares");
     }
 
-    function testMorphoMarketUtilizationIs90Percent() public view {
-        console.log("=== Morpho Market Utilization ===");
-
-        // Get market params from vault's liquidity data (set during deployment)
-        bytes memory liquidityData = vault.liquidityData();
-        require(liquidityData.length > 0, "Vault has no liquidity data set");
-
-        MarketParams memory params = abi.decode(liquidityData, (MarketParams));
-        console.log("Oracle (from vault):", params.oracle);
-
-        Id marketId = Id.wrap(keccak256(abi.encode(params)));
-        IMorpho morpho = IMorpho(MORPHO_BLUE);
-
-        // Get market state
-        Market memory marketState = morpho.market(marketId);
-
-        console.log("Market totalSupplyAssets:", marketState.totalSupplyAssets);
-        console.log("Market totalBorrowAssets:", marketState.totalBorrowAssets);
-
-        // Verify utilization is 90%
-        // utilization = totalBorrowAssets / totalSupplyAssets
-        // 1.8e18 / 2e18 = 90%
-        uint256 utilizationBps = (uint256(marketState.totalBorrowAssets) * 10000) / uint256(marketState.totalSupplyAssets);
-        console.log("Utilization (bps):", utilizationBps);
-
-        assertEq(utilizationBps, 9000, "Market utilization should be 90% (9000 bps)");
-    }
-
     function testMaxRate() public view {
         console.log("=== Max Rate ===");
 
@@ -236,10 +191,9 @@ contract DeployedVaultTest is Test {
 
     function testUserDeposit() public {
         address user = makeAddr("testUser");
-        uint256 depositAmount = 100 * 1e18; // 100 USDS
+        uint256 depositAmount = 100 * 1e18;
 
-        // Fund user with USDS
-        deal(USDS, user, depositAmount);
+        deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
         usds.approve(address(vault), depositAmount);
@@ -263,10 +217,9 @@ contract DeployedVaultTest is Test {
 
     function testUserWithdraw() public {
         address user = makeAddr("testUser2");
-        uint256 depositAmount = 100 * 1e18; // 100 USDS
+        uint256 depositAmount = 100 * 1e18;
 
-        // Fund and deposit
-        deal(USDS, user, depositAmount);
+        deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
         usds.approve(address(vault), depositAmount);
@@ -275,7 +228,6 @@ contract DeployedVaultTest is Test {
         console.log("=== User Withdraw Test ===");
         console.log("Deposited, got shares:", shares);
 
-        // Withdraw half
         uint256 withdrawShares = shares / 2;
         uint256 expectedAssets = vault.previewRedeem(withdrawShares);
 
@@ -295,9 +247,9 @@ contract DeployedVaultTest is Test {
 
     function testFullDepositWithdrawCycle() public {
         address user = makeAddr("cycleUser");
-        uint256 depositAmount = 1000 * 1e18; // 1000 USDS
+        uint256 depositAmount = 1000 * 1e18;
 
-        deal(USDS, user, depositAmount);
+        deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
         usds.approve(address(vault), depositAmount);
@@ -305,15 +257,12 @@ contract DeployedVaultTest is Test {
         console.log("=== Full Cycle Test ===");
         console.log("Initial USDS:", depositAmount);
 
-        // Deposit
         uint256 shares = vault.deposit(depositAmount, user);
         console.log("Shares after deposit:", shares);
 
-        // Full redeem
         uint256 assetsBack = vault.redeem(shares, user, user);
         console.log("USDS after full redeem:", assetsBack);
 
-        // Should get back approximately the same amount (minus any fees/rounding)
         assertApproxEqAbs(assetsBack, depositAmount, 2, "Should get back ~same amount");
         assertEq(vault.balanceOf(user), 0, "Should have 0 shares");
 
@@ -325,17 +274,15 @@ contract DeployedVaultTest is Test {
     function testSharePrice() public view {
         console.log("=== Share Price ===");
 
-        uint256 oneShare = 1e18; // Vault has 18 decimals
+        uint256 oneShare = 1e18;
         uint256 assetsPerShare = vault.convertToAssets(oneShare);
 
-        uint256 oneUSDS = 1e18;
-        uint256 sharesPerUSDS = vault.convertToShares(oneUSDS);
+        uint256 oneUsds = 1e18;
+        uint256 sharesPerUsds = vault.convertToShares(oneUsds);
 
         console.log("Assets per 1e18 shares:", assetsPerShare);
-        console.log("Shares per 1 USDS:", sharesPerUSDS);
+        console.log("Shares per 1 USDS:", sharesPerUsds);
 
-        // Share price should be close to 1:1 for a new vault
-        // 1e18 shares should give ~1e18 assets (1 USDS)
         assertGt(assetsPerShare, 0, "Should have positive conversion");
     }
 
@@ -346,15 +293,12 @@ contract DeployedVaultTest is Test {
 
         vm.startPrank(attacker);
 
-        // Should not be able to set curator
         vm.expectRevert();
         vault.setCurator(attacker);
 
-        // Should not be able to set owner
         vm.expectRevert();
         vault.setOwner(attacker);
 
-        // Should not be able to submit (not curator)
         vm.expectRevert();
         vault.submit(abi.encodeWithSelector(IVaultV2.setIsAllocator.selector, attacker, true));
 

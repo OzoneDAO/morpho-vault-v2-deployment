@@ -1,64 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity 0.8.28;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
-// Interfaces
-import {IMorpho, MarketParams, Id} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
+import {IMorpho, MarketParams} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {VaultV2} from "vault-v2/VaultV2.sol";
 import {VaultV2Factory} from "vault-v2/VaultV2Factory.sol";
 import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
 
-// Factory Interfaces
-interface IMorphoChainlinkOracleV2Factory {
-    function createMorphoChainlinkOracleV2(
-        address baseVault,
-        uint256 baseVaultConversionSample,
-        address baseFeed1,
-        address baseFeed2,
-        uint256 baseTokenDecimals,
-        address quoteVault,
-        uint256 quoteVaultConversionSample,
-        address quoteFeed1,
-        address quoteFeed2,
-        uint256 quoteTokenDecimals,
-        bytes32 salt
-    ) external returns (address);
-}
-
-interface IMorphoMarketV1AdapterV2Factory {
-    function createMorphoMarketV1AdapterV2(address vaultV2Address) external returns (address);
-}
+import {Constants} from "../src/lib/Constants.sol";
+import {DeployHelpers, IMorphoChainlinkOracleV2Factory, IMorphoMarketV1AdapterV2Factory} from "../src/lib/DeployHelpers.sol";
 
 /**
  * @title DeployUSDSVaultV2
  * @notice Deploys Vault V2 for USDS and connects it to the stUSDS/USDS Morpho Market
- * @dev Updated to include full security configuration (Timelocks, MaxRate, Registry Abdication)
+ * @dev This is a single-market vault with liquidity adapter (deposits auto-allocated)
  */
-contract DeployUSDSVaultV2 is Script, StdCheats {
-    // --- Constants & Addresses (Mainnet) ---
-    address constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
-    address constant ST_USDS = 0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9;
-    address constant IRM_ADAPTIVE = 0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC;
-    address constant MORPHO_BLUE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
-
-    // Factories & Registry
-    address constant ORACLE_FACTORY = 0x3A7bB36Ee3f3eE32A60e9f2b33c1e5f2E83ad766;
-    address constant VAULT_V2_FACTORY = 0xA1D94F746dEfa1928926b84fB2596c06926C0405;
-    address constant ADAPTER_FACTORY = 0x32BB1c0D48D8b1B3363e86eeB9A0300BAd61ccc1;
-    address constant ADAPTER_REGISTRY = 0x3696c5eAe4a7Ffd04Ea163564571E9CD8Ed9364e;
-
-    // Params
-    uint256 constant LLTV = 860000000000000000; // 86%
-    uint256 constant INITIAL_DEAD_DEPOSIT = 1e18; // 1 USDS
-    uint256 constant INITIAL_DEAD_COLLATERAL = 21e17; // 2.1 stUSDS (needed to borrow 1.8 USDS at 86% LLTV with ~1.03 stUSDS/USDS rate)
-    uint256 constant DEAD_BORROW_AMOUNT = 18e17; // 1.8 USDS for 90% utilization (totalBorrow/totalSupply = 1.8/2 = 90%)
-    uint256 constant MAX_RATE = 63419583967; // 200% APR Cap (200e16 / 365 days)
-    uint256 constant TIMELOCK_LOW = 3 days;
-    uint256 constant TIMELOCK_HIGH = 7 days;
+contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
+    // Params specific to this deployment
+    uint256 constant INITIAL_DEAD_COLLATERAL = 21e17; // 2.1 stUSDS
+    uint256 constant DEAD_BORROW_AMOUNT = 18e17; // 1.8 USDS for 90% utilization
 
     struct DeploymentResult {
         address oracle;
@@ -71,38 +35,33 @@ contract DeployUSDSVaultV2 is Script, StdCheats {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
-        // --- Optional: Env Vars for Final Ownership ---
-        // If not set, defaults to deployer
         address finalOwner = vm.envOr("OWNER", deployer);
         address finalCurator = vm.envOr("CURATOR", deployer);
         address finalAllocator = vm.envOr("ALLOCATOR", deployer);
         address sentinel = vm.envOr("SENTINEL", address(0));
-        
-        // Vault metadata
+
         string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDS Vault V2"));
         string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdsVaultV2"));
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // --- Step 1: Create Oracle (stUSDS/USDS) ---
-        // Oracle uses only the stUSDS ERC4626 redemption rate to price stUSDS in USDS
-        // No Chainlink feeds needed since both tokens are denominated in the same unit (USDS)
+        // Step 1: Create Oracle (stUSDS/USDS using ERC4626 redemption rate only)
         bytes32 oracleSalt = keccak256(abi.encodePacked(block.timestamp, "Oracle"));
-        result.oracle = IMorphoChainlinkOracleV2Factory(ORACLE_FACTORY).createMorphoChainlinkOracleV2(
-            ST_USDS, 1e18, address(0), address(0), 18, // base: stUSDS with ERC4626 conversion, no feeds
-            address(0), 1, address(0), address(0), 18, // quote: USDS, no conversion needed
+        result.oracle = IMorphoChainlinkOracleV2Factory(Constants.ORACLE_FACTORY).createMorphoChainlinkOracleV2(
+            Constants.ST_USDS, 1e18, address(0), address(0), Constants.DECIMALS_STUSDS,
+            address(0), 1, address(0), address(0), Constants.DECIMALS_USDS,
             oracleSalt
         );
         console.log("Oracle deployed at:", result.oracle);
 
-        // --- Step 2: Create Market (USDS / stUSDS) ---
-        IMorpho morpho = IMorpho(MORPHO_BLUE);
+        // Step 2: Create Market
+        IMorpho morpho = IMorpho(Constants.MORPHO_BLUE);
         MarketParams memory params = MarketParams({
-            loanToken: USDS,
-            collateralToken: ST_USDS,
+            loanToken: Constants.USDS,
+            collateralToken: Constants.ST_USDS,
             oracle: result.oracle,
-            irm: IRM_ADAPTIVE,
-            lltv: LLTV
+            irm: Constants.IRM_ADAPTIVE,
+            lltv: Constants.LLTV_STUSDS
         });
 
         result.marketId = keccak256(abi.encode(params));
@@ -112,199 +71,90 @@ contract DeployUSDSVaultV2 is Script, StdCheats {
             console.log("Market already exists, proceeding...");
         }
 
-        // --- Step 3: Deploy Vault V2 ---
+        // Step 3: Deploy Vault V2
         bytes32 vaultSalt = keccak256(abi.encodePacked(block.timestamp, "VaultV2"));
-        // Vault created with deployer as owner
-        result.vaultV2 = VaultV2Factory(VAULT_V2_FACTORY).createVaultV2(deployer, USDS, vaultSalt);
+        result.vaultV2 = VaultV2Factory(Constants.VAULT_V2_FACTORY).createVaultV2(deployer, Constants.USDS, vaultSalt);
         console.log("VaultV2 deployed at:", result.vaultV2);
         VaultV2 vault = VaultV2(result.vaultV2);
 
-        // Set Vault Name and Symbol (Owner function - direct call)
         vault.setName(vaultName);
         vault.setSymbol(vaultSymbol);
         console.log("Vault Name:", vaultName);
         console.log("Vault Symbol:", vaultSymbol);
 
-        // --- Step 4: Deploy Market Adapter ---
-        result.adapter = IMorphoMarketV1AdapterV2Factory(ADAPTER_FACTORY)
+        // Step 4: Deploy Market Adapter
+        result.adapter = IMorphoMarketV1AdapterV2Factory(Constants.ADAPTER_FACTORY)
             .createMorphoMarketV1AdapterV2(result.vaultV2);
         console.log("Adapter deployed at:", result.adapter);
 
-        // --- Step 5: Configuration & Auth ---
+        // Step 5: Configuration
+        _configureVault(vault, result.adapter, params, deployer);
 
-        // A. Setup Initial Roles
-        // deployer is Owner initially.
-        // We need to be Curator to use 'submit'.
-        vault.setCurator(deployer); 
+        // Step 6: Dead Deposits
+        _setupDeadDeposits(vault, morpho, params, deployer);
+
+        // Step 7: Timelocks
+        _configureTimelocks(vault);
+        _configureAdapterTimelocks(IMorphoMarketV1AdapterV2(result.adapter));
+
+        // Step 8: Finalize Ownership
+        _finalizeOwnership(vault, deployer, finalOwner, finalCurator, finalAllocator, sentinel);
+
+        vm.stopBroadcast();
+    }
+
+    function _configureVault(VaultV2 vault, address adapter, MarketParams memory params, address deployer) internal {
+        // Setup roles
+        vault.setCurator(deployer);
         console.log("Defined Deployer as Curator");
 
-        // Now we can use submit+execute pattern for Curator functions (timelocked)
-        
-        // 1. Set Allocator (Curator function)
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.setIsAllocator.selector, deployer, true));
 
-        // B. Set Registry & Abdicate 
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.setAdapterRegistry.selector, ADAPTER_REGISTRY));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setAdapterRegistry.selector));
+        // Abdicate gates and registry
+        _abdicateGatesAndRegistry(vault);
 
-        // Abdicate Gates (Security Requirement)
-        // ensure valid exit/entry for users
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setSendSharesGate.selector));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setReceiveAssetsGate.selector));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.abdicate.selector, IVaultV2.setReceiveSharesGate.selector));
+        // Set liquidity adapter (deposits auto-allocated)
+        vault.setLiquidityAdapterAndData(adapter, abi.encode(params));
 
-        console.log("Registry set and abdicated. Gates abdicated.");
+        // Add adapter and caps
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.addAdapter.selector, adapter));
 
-        // C. Set Liquidity Adapter 
-        // Allocator function (Direct call allowed if we are allocator)
-        vault.setLiquidityAdapterAndData(result.adapter, abi.encode(params));
-
-        // D. Add Adapter & Caps
-        // Curator functions -> Submit+Execute
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.addAdapter.selector, result.adapter));
-        
-        // 1. Adapter Caps
-        bytes memory adapterIdData = abi.encode("this", result.adapter);
+        bytes memory adapterIdData = abi.encode("this", adapter);
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, adapterIdData, type(uint128).max));
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, adapterIdData, 1e18));
 
-        // 2. Market Specific Caps
-        bytes memory marketIdData = abi.encode("this/marketParams", result.adapter, params);
+        bytes memory marketIdData = abi.encode("this/marketParams", adapter, params);
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, marketIdData, type(uint128).max));
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, marketIdData, 1e18));
 
-        // 3. Collateral Specific Caps 
-        bytes memory collateralIdData = abi.encode("collateralToken", ST_USDS);
+        bytes memory collateralIdData = abi.encode("collateralToken", Constants.ST_USDS);
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, collateralIdData, type(uint128).max));
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, collateralIdData, 1e18));
 
         console.log("Caps and Adapter configured.");
 
-        // E. Set Max Rate 
-        // Allocator function -> Direct call
-        vault.setMaxRate(MAX_RATE);
+        vault.setMaxRate(Constants.MAX_RATE);
         console.log("Max Rate set to 200% APR");
+    }
 
-        // --- Step 6: Dead Deposit (Security) ---
-
-        // A. Deposit into Vault (seeds share price)
-        IERC20(USDS).approve(address(vault), INITIAL_DEAD_DEPOSIT);
-        vault.deposit(INITIAL_DEAD_DEPOSIT, address(0xdEaD));
+    function _setupDeadDeposits(VaultV2 vault, IMorpho morpho, MarketParams memory params, address deployer) internal {
+        // A. Deposit into Vault
+        IERC20(Constants.USDS).approve(address(vault), Constants.INITIAL_DEAD_DEPOSIT);
+        vault.deposit(Constants.INITIAL_DEAD_DEPOSIT, address(0xdEaD));
         console.log("Dead deposit to vault executed.");
 
-        // B. Supply directly to Morpho Market (seeds the market)
-        // Approve Morpho to spend USDS
-        IERC20(USDS).approve(MORPHO_BLUE, INITIAL_DEAD_DEPOSIT);
-        morpho.supply(params, INITIAL_DEAD_DEPOSIT, 0, address(0xdEaD), bytes(""));
+        // B. Supply directly to Morpho Market
+        IERC20(Constants.USDS).approve(Constants.MORPHO_BLUE, Constants.INITIAL_DEAD_DEPOSIT);
+        morpho.supply(params, Constants.INITIAL_DEAD_DEPOSIT, 0, address(0xdEaD), bytes(""));
         console.log("Dead supply to morpho market executed.");
 
-        // C. Supply stUSDS collateral to Morpho Market (for dead borrow position)
-        IERC20(ST_USDS).approve(MORPHO_BLUE, INITIAL_DEAD_COLLATERAL);
+        // C. Supply stUSDS collateral
+        IERC20(Constants.ST_USDS).approve(Constants.MORPHO_BLUE, INITIAL_DEAD_COLLATERAL);
         morpho.supplyCollateral(params, INITIAL_DEAD_COLLATERAL, deployer, bytes(""));
         console.log("Dead collateral supply to morpho market executed.");
 
-        // D. Borrow USDS to create initial utilization (deployer takes debt, USDS sent back to deployer)
-        // This allows deployer to recover 1.8 USDS, reducing net cost (2 USDS deposited - 1.8 USDS borrowed back = 0.2 USDS net)
+        // D. Borrow USDS for 90% utilization
         morpho.borrow(params, DEAD_BORROW_AMOUNT, 0, deployer, deployer);
-        console.log("Dead borrow executed for 90% utilization (USDS sent to deployer).");
-
-        // --- Step 7: Timelocks  ---
-        // Configure Granular Timelocks
-        _configureTimelocks(vault);
-
-        // Configure Adapter Timelocks
-        _configureAdapterTimelocks(IMorphoMarketV1AdapterV2(result.adapter));
-
-        // --- Step 8: Finalize Ownership  ---
-        
-        // Transfer roles to the real owners defined in Env Vars
-        // Note: Removing allocator requires submit+execute if done by Curator, or we can just rely on finalOwner setting it later?
-        // Actually setIsAllocator is a Curator function.
-        
-        if (finalAllocator != deployer) {
-            _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.setIsAllocator.selector, deployer, false));
-            _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.setIsAllocator.selector, finalAllocator, true));
-        }
-        
-        if (finalCurator != deployer) {
-            vault.setCurator(finalCurator);
-        }
-        // If Sentinel role is needed
-        if (sentinel != address(0)) {
-            vault.setIsSentinel(sentinel, true);
-        }
-
-        if (finalOwner != deployer) {
-            vault.setOwner(finalOwner);
-            console.log("Ownership transferred to:", finalOwner);
-        }
-
-        vm.stopBroadcast();
-    }
-
-    // --- Helper Functions from FullDeployment Script ---
-
-    // Generic helper for Submit + Execute pattern on Timelock contracts (Vault, Adapter)
-    function _submitAndExecute(address target, bytes memory data) internal {
-        // 1. Submit
-        // We use low-level call to support both Vault and Adapter interfaces indiscriminately 
-        // (though they share the same signature for submit(bytes))
-        (bool submitSuccess, ) = target.call(abi.encodeWithSignature("submit(bytes)", data));
-        require(submitSuccess, "Submit failed");
-
-        // 2. Execute
-        // Since timelock is 0 at this stage for these functions, we can execute immediately.
-        // The 'timelocked()' modifier in target checks 'executableAt'.
-        (bool execSuccess, ) = target.call(data);
-        require(execSuccess, "Execution failed");
-    }
-
-    function _configureTimelocks(VaultV2 vault) internal {
-        // 1. Configure Low Timelocks (3 days)
-        bytes4[] memory lowSelectors = new bytes4[](4);
-        lowSelectors[0] = IVaultV2.addAdapter.selector;
-        lowSelectors[1] = IVaultV2.increaseAbsoluteCap.selector;
-        lowSelectors[2] = IVaultV2.increaseRelativeCap.selector;
-        lowSelectors[3] = IVaultV2.setForceDeallocatePenalty.selector;
-
-        for (uint256 i = 0; i < lowSelectors.length; i++) {
-            _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseTimelock.selector, lowSelectors[i], TIMELOCK_LOW));
-        }
-
-        // 2. Configure High Timelocks (7 days) - except increaseTimelock
-        bytes4[] memory highSelectors = new bytes4[](2);
-        // highSelectors[0] = IVaultV2.increaseTimelock.selector; // MOVED TO END
-        highSelectors[0] = IVaultV2.removeAdapter.selector;
-        highSelectors[1] = IVaultV2.abdicate.selector;
-
-        for (uint256 i = 0; i < highSelectors.length; i++) {
-            _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseTimelock.selector, highSelectors[i], TIMELOCK_HIGH));
-        }
-
-        // 3. Finally, increase the timelock for "increaseTimelock" itself to 7 days.
-        // Doing this last ensures we don't accidentally lock ourselves out of configuring the others.
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseTimelock.selector, IVaultV2.increaseTimelock.selector, TIMELOCK_HIGH));
-        
-        console.log("Vault Timelocks configured (High: 7d, Low: 3d)");
-    }
-
-    function _configureAdapterTimelocks(IMorphoMarketV1AdapterV2 adapter) internal {
-        // 1. Configure Low Timelocks (3 days)
-        bytes4[] memory lowSelectors = new bytes4[](2);
-        lowSelectors[0] = IMorphoMarketV1AdapterV2.setSkimRecipient.selector;
-        lowSelectors[1] = IMorphoMarketV1AdapterV2.burnShares.selector;
-
-        for (uint256 i = 0; i < lowSelectors.length; i++) {
-             _submitAndExecute(address(adapter), abi.encodeWithSelector(IMorphoMarketV1AdapterV2.increaseTimelock.selector, lowSelectors[i], TIMELOCK_LOW));
-        }
-
-        // 2. Configure High Timelocks (7 days) - except increaseTimelock
-        // abdicate only
-        _submitAndExecute(address(adapter), abi.encodeWithSelector(IMorphoMarketV1AdapterV2.increaseTimelock.selector, IMorphoMarketV1AdapterV2.abdicate.selector, TIMELOCK_HIGH));
-
-        // 3. Finally, increase the timelock for "increaseTimelock" itself to 7 days.
-        _submitAndExecute(address(adapter), abi.encodeWithSelector(IMorphoMarketV1AdapterV2.increaseTimelock.selector, IMorphoMarketV1AdapterV2.increaseTimelock.selector, TIMELOCK_HIGH));
-
-        console.log("Adapter Timelocks configured (High: 7d, Low: 3d)");
+        console.log("Dead borrow executed for 90% utilization.");
     }
 }

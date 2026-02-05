@@ -18,6 +18,7 @@ jobs:
       VAULT_NAME: "sky.money USDS Risk Capital"
       VAULT_SYMBOL: "skyMoneyUsdsRiskCapital"
       VAULT_ADDRESS: "0xf42bca228D9bd3e2F8EE65Fec3d21De1063882d4"
+      USDS_BLOCK_NUMBER: 24284915
 
     steps:
       - uses: actions/checkout@v4
@@ -29,14 +30,8 @@ jobs:
 
       - name: Run deploy script tests
         run: |
-          anvil --fork-url ${{ secrets.RPC_URL }} &
-          sleep 5
-          forge test --match-contract DeployScriptTest --fork-url http://localhost:8545 -vvvv
-          pkill anvil
+          forge test --match-contract DeployUSDSScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
       - name: Run deployed vault tests
         run: |
-          anvil --fork-url ${{ secrets.RPC_URL }} &
-          sleep 5
-          forge test --match-contract DeployedVaultTest --fork-url http://localhost:8545 -vvvv
-          pkill anvil
+          forge test --match-contract DeployedUSDSVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDS_BLOCK_NUMBER }} -vvvv
