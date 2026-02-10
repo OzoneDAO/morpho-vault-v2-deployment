@@ -4,4 +4,4 @@ buildCommand = "cd bot && npm install && npm run build"
 
 [deploy]
 startCommand = "cd bot && npm start"
-cronSchedule = "*/5 * * * *"
+cronSchedule = "0 * * * *"
