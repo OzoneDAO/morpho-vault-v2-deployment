@@ -4,18 +4,21 @@
  * This bot maintains the 80% idle / 20% allocated strategy for the Flagship USDS Vault.
  * It allocates 5% to each of 4 markets: stUSDS, cbBTC, wstETH, WETH (all with USDS as loan token).
  *
+ * Transactions are executed through a Safe 1/3 multisig. The bot is one of the 3 signers
+ * and can execute autonomously since the threshold is 1.
+ *
  * Run as a cronjob (e.g., every hour):
  *   0 * * * * cd /path/to/bot && npm run allocate >> /var/log/allocator.log 2>&1
  *
  * Environment Variables (see .env.example):
  *   - RPC_URL: Ethereum RPC endpoint
- *   - PRIVATE_KEY: Allocator's private key
+ *   - PRIVATE_KEY: Bot signer's private key (one of the Safe owners)
+ *   - SAFE_ADDRESS: Safe 1/3 multisig address (set as allocator on the vault)
  *   - VAULT_ADDRESS: Flagship Vault V2 address
  *   - ADAPTER_ADDRESS: MorphoMarketV1AdapterV2 address
- *   - MARKET_PARAMS_*: Encoded market params for each market
  */
 
-import { createPublicClient, createWalletClient, http, formatEther, parseEther, encodeFunctionData, type Address, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, http, formatEther, parseEther, encodeFunctionData, hexToBytes, bytesToHex, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 import 'dotenv/config';
@@ -25,6 +28,7 @@ import 'dotenv/config';
 const config = {
   rpcUrl: process.env.RPC_URL || 'https://eth.llamarpc.com',
   privateKey: process.env.PRIVATE_KEY as Hex,
+  safeAddress: process.env.SAFE_ADDRESS as Address,
   vaultAddress: process.env.VAULT_ADDRESS as Address,
   adapterAddress: process.env.ADAPTER_ADDRESS as Address,
 
@@ -171,7 +175,69 @@ const erc20Abi = [
   },
 ] as const;
 
+const safeAbi = [
+  {
+    name: 'nonce',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'getThreshold',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'isOwner',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    name: 'getTransactionHash',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
+      { name: 'operation', type: 'uint8' },
+      { name: 'safeTxGas', type: 'uint256' },
+      { name: 'baseGas', type: 'uint256' },
+      { name: 'gasPrice', type: 'uint256' },
+      { name: 'gasToken', type: 'address' },
+      { name: 'refundReceiver', type: 'address' },
+      { name: '_nonce', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bytes32' }],
+  },
+  {
+    name: 'execTransaction',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
+      { name: 'operation', type: 'uint8' },
+      { name: 'safeTxGas', type: 'uint256' },
+      { name: 'baseGas', type: 'uint256' },
+      { name: 'gasPrice', type: 'uint256' },
+      { name: 'gasToken', type: 'address' },
+      { name: 'refundReceiver', type: 'address' },
+      { name: 'signatures', type: 'bytes' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+] as const;
+
 // ============ HELPERS ============
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
 function encodeMarketParams(market: MarketConfig): Hex {
   // MarketParams struct: (loanToken, collateralToken, oracle, irm, lltv)
@@ -222,6 +288,56 @@ function log(message: string, data?: unknown) {
   }
 }
 
+/**
+ * Execute a transaction through the Safe multisig.
+ * Signs the Safe transaction hash using eth_sign and calls execTransaction.
+ * Works for threshold=1 Safes where the bot is one of the owners.
+ */
+async function executeSafeTransaction(
+  publicClient: ReturnType<typeof createPublicClient>,
+  walletClient: ReturnType<typeof createWalletClient>,
+  account: ReturnType<typeof privateKeyToAccount>,
+  safeAddress: Address,
+  to: Address,
+  data: Hex,
+): Promise<Hex> {
+  // Get current Safe nonce
+  const nonce = await publicClient.readContract({
+    address: safeAddress,
+    abi: safeAbi,
+    functionName: 'nonce',
+  });
+
+  // Get the Safe transaction hash to sign
+  const safeTxHash = await publicClient.readContract({
+    address: safeAddress,
+    abi: safeAbi,
+    functionName: 'getTransactionHash',
+    args: [to, 0n, data, 0, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, nonce],
+  });
+
+  // Sign using eth_sign (signMessage adds "\x19Ethereum Signed Message:\n32" prefix)
+  const signature = await account.signMessage({ message: { raw: safeTxHash } });
+
+  // Adjust v value: +4 to indicate eth_sign signature type to Safe contract
+  // Safe uses v > 30 to identify eth_sign signatures
+  const sigBytes = hexToBytes(signature);
+  sigBytes[64] += 4;
+  const adjustedSig = bytesToHex(sigBytes);
+
+  // Execute through Safe (bot's EOA pays gas, Safe executes the inner call)
+  const hash = await walletClient.writeContract({
+    account,
+    chain: mainnet,
+    address: safeAddress,
+    abi: safeAbi,
+    functionName: 'execTransaction',
+    args: [to, 0n, data, 0, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, adjustedSig],
+  });
+
+  return hash;
+}
+
 // ============ MAIN ALLOCATOR LOGIC ============
 
 async function main() {
@@ -231,6 +347,9 @@ async function main() {
   // Validate configuration
   if (!config.privateKey) {
     throw new Error('PRIVATE_KEY environment variable is required');
+  }
+  if (!config.safeAddress) {
+    throw new Error('SAFE_ADDRESS environment variable is required');
   }
   if (!config.vaultAddress) {
     throw new Error('VAULT_ADDRESS environment variable is required');
@@ -251,22 +370,45 @@ async function main() {
     transport: http(config.rpcUrl),
   });
 
-  log(`Allocator address: ${account.address}`);
+  log(`Bot signer address: ${account.address}`);
+  log(`Safe multisig address: ${config.safeAddress}`);
   log(`Vault address: ${config.vaultAddress}`);
   log(`Adapter address: ${config.adapterAddress}`);
 
-  // Check if we're an allocator
+  // Verify bot is an owner of the Safe
+  const isOwner = await publicClient.readContract({
+    address: config.safeAddress,
+    abi: safeAbi,
+    functionName: 'isOwner',
+    args: [account.address],
+  });
+  if (!isOwner) {
+    throw new Error(`Bot signer ${account.address} is not an owner of Safe ${config.safeAddress}`);
+  }
+
+  // Verify Safe threshold is 1 (so bot can execute autonomously)
+  const threshold = await publicClient.readContract({
+    address: config.safeAddress,
+    abi: safeAbi,
+    functionName: 'getThreshold',
+  });
+  if (threshold !== 1n) {
+    throw new Error(`Safe threshold is ${threshold}, expected 1. Bot cannot execute autonomously.`);
+  }
+  log('Safe ownership and threshold verified (1/3 multisig)');
+
+  // Check if the Safe is an allocator on the vault
   const isAllocator = await publicClient.readContract({
     address: config.vaultAddress,
     abi: vaultAbi,
     functionName: 'isAllocator',
-    args: [account.address],
+    args: [config.safeAddress],
   });
 
   if (!isAllocator) {
-    throw new Error(`Account ${account.address} is not an allocator for this vault`);
+    throw new Error(`Safe ${config.safeAddress} is not an allocator for this vault`);
   }
-  log('Allocator permission verified');
+  log('Allocator permission verified (Safe is allocator)');
 
   // Get current state
   const [totalAssets, adapterAssets, vaultIdleBalance] = await Promise.all([
@@ -405,14 +547,24 @@ async function main() {
     try {
       const functionName = action === 'allocate' ? 'allocate' : 'deallocate';
 
-      const hash = await walletClient.writeContract({
-        address: config.vaultAddress,
+      // Encode the vault call data
+      const callData = encodeFunctionData({
         abi: vaultAbi,
         functionName,
         args: [config.adapterAddress, market.encodedParams!, amount],
       });
 
-      log(`  Transaction submitted: ${hash}`);
+      // Execute through Safe multisig
+      const hash = await executeSafeTransaction(
+        publicClient,
+        walletClient,
+        account,
+        config.safeAddress,
+        config.vaultAddress,
+        callData,
+      );
+
+      log(`  Transaction submitted via Safe: ${hash}`);
 
       // Wait for confirmation
       const receipt = await publicClient.waitForTransactionReceipt({ hash });

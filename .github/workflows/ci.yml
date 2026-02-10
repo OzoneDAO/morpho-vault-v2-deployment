@@ -10,7 +10,6 @@ env:
   # Shared environment variables
   OWNER: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
   CURATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-  ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
   SENTINEL: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
 
 jobs:
@@ -20,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
       VAULT_NAME: "sky.money USDS Risk Capital"
       VAULT_SYMBOL: "skyMoneyUsdsRiskCapital"
       VAULT_ADDRESS: "0xf42bca228D9bd3e2F8EE65Fec3d21De1063882d4"
@@ -47,9 +47,15 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      ALLOCATOR: "0xE4d5F54CE1830d5eCC49751021F306CFE7a52649"
       VAULT_NAME: "sky.money USDS Flagship Capital"
       VAULT_SYMBOL: "skyMoneyUsdsFlagshipCapital"
-      # VAULT_ADDRESS: ""
+      # Uncomment after each script is deployed on mainnet
+      # VAULT_ADDRESS: "0x..."
+      # ADAPTER_ADDRESS: "0x..."
+      # ORACLE_CBBTC: "0x..."
+      # ORACLE_WSTETH: "0x..."
+      # ORACLE_WETH: "0x..."
       # FLAGSHIP_BLOCK_NUMBER: 0
 
     steps:
@@ -60,11 +66,11 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Run Flagship vault deployment tests
+      - name: Run Flagship vault script tests
         run: |
           forge test --match-contract DeployFlagshipScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
-      # Uncomment after Flagship vault is deployed
-      # - name: Run Flagship vault deployed tests
+      # Uncomment after Flagship vault is deployed on mainnet
+      # - name: Run Flagship deployed tests
       #   run: |
-      #     forge test --match-contract DeployedFlagshipVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.FLAGSHIP_BLOCK_NUMBER }} -vvvv
+      #     forge test --match-path "test/deployed-flagship/*" --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.FLAGSHIP_BLOCK_NUMBER }} -vvvv

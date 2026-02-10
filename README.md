@@ -28,13 +28,22 @@ This repository deploys two USDS-based Morpho vaults with different strategies:
 │   ├── Constants.sol                      # Mainnet addresses & parameters
 │   └── DeployHelpers.sol                  # Shared deployment utilities
 ├── test/
-│   ├── DeployUSDSScript.t.sol             # USDS vault tests
-│   ├── DeployFlagshipScript.t.sol         # Flagship vault tests
-│   └── base/BaseVaultTest.sol             # Shared test suite
-└── bot/
-    ├── src/allocator.ts                   # Allocator bot for Flagship vault
-    ├── DEPLOYMENT_SEQUENCE.md             # Deployment order documentation
-    └── README.md                          # Bot documentation
+│   ├── DeployUSDSScript.t.sol             # USDS vault script tests
+│   ├── DeployFlagshipScript.t.sol         # Flagship vault script tests
+│   ├── DeployedUSDSVault.t.sol            # Deployed USDS vault tests
+│   ├── deployed-flagship/                 # Deployed Flagship vault tests (1 per script)
+│   │   ├── 1_CreateVault.t.sol
+│   │   ├── 2_CreateCbBtcMarket.t.sol
+│   │   ├── 3_CreateWstEthMarket.t.sol
+│   │   ├── 4_CreateWethMarket.t.sol
+│   │   └── 5_ConfigureVault.t.sol
+│   └── base/
+│       ├── BaseVaultTest.sol              # Shared script test suite
+│       └── BaseDeployedVaultTest.sol      # Shared deployed test suite
+├── bot/
+│   ├── src/allocator.ts                   # Allocator bot (executes via Safe multisig)
+│   └── README.md                          # Bot documentation
+└── DEPLOYMENT_SEQUENCE.md                 # Full deployment order (scripts + Safe + bot)
 ```
 
 ## Vaults
@@ -69,27 +78,45 @@ forge install
 
 ## Testing
 
-Tests run against a mainnet fork using Anvil.
+### Script Tests (pre-deployment)
+
+Run deployment scripts in-memory on an Anvil fork to verify they produce correct output:
 
 ```bash
-# Setup
 source .env
-
-# Start Anvil fork
 anvil --fork-url $RPC_URL &
 sleep 5
 
-# Run USDS vault tests
-forge test --match-contract DeployUSDSScript --fork-url http://localhost:8545 -v
-
-# Run Flagship vault tests
-forge test --match-contract DeployFlagshipScript --fork-url http://localhost:8545 -v
-
-# Run all deployment tests
+# Run all script tests
 forge test --match-path "test/Deploy*Script.t.sol" --fork-url http://localhost:8545 -v
 
-# Cleanup
 pkill anvil
+```
+
+### Deployed Tests (post-deployment, incremental)
+
+After each mainnet deployment script, run the corresponding test to verify on-chain state:
+
+```bash
+source .env  # Must contain VAULT_ADDRESS, ADAPTER_ADDRESS, ORACLE_* etc.
+
+# After script 1: verify vault and adapter
+forge test --match-path "test/deployed-flagship/1_*" --fork-url $RPC_URL -v
+
+# After script 2: verify cbBTC oracle and market
+forge test --match-path "test/deployed-flagship/2_*" --fork-url $RPC_URL -v
+
+# After script 3: verify wstETH oracle and market
+forge test --match-path "test/deployed-flagship/3_*" --fork-url $RPC_URL -v
+
+# After script 4: verify WETH oracle and market
+forge test --match-path "test/deployed-flagship/4_*" --fork-url $RPC_URL -v
+
+# After script 5: verify full vault configuration (roles, timelocks, gates, caps, deposits)
+forge test --match-path "test/deployed-flagship/5_*" --fork-url $RPC_URL -v
+
+# Or run all deployed tests at once
+forge test --match-path "test/deployed-flagship/*" --fork-url $RPC_URL -v
 ```
 
 ## Deployment
@@ -106,7 +133,7 @@ RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 # Optional (defaults to deployer address)
 OWNER=0x...           # Final owner (multisig recommended)
 CURATOR=0x...         # Manages vault config via timelock
-ALLOCATOR=0x...       # Bot address for Flagship vault
+ALLOCATOR=0x...       # Safe 1/3 multisig address for Flagship vault
 SENTINEL=0x...        # Can revoke timelocked actions
 
 # Optional (custom naming)
@@ -167,13 +194,19 @@ forge script script/flagship/5_ConfigureVault.s.sol \
 
 ## Allocator Bot
 
-The Flagship vault requires an allocator bot to maintain the 80% idle / 20% allocated strategy.
+The Flagship vault requires an allocator bot to maintain the 80% idle / 20% allocated strategy. The bot executes transactions through a **Safe 1/3 multisig** (threshold 1, 3 owners). The Safe address is set as the vault's allocator, and the bot autonomously signs and executes via `execTransaction`.
+
+### Setup
+
+1. Create a Safe multisig at [app.safe.global](https://app.safe.global) with threshold=1 and 3 owners (one being the bot's EOA)
+2. Use the Safe address as `ALLOCATOR` during vault deployment (Script 5)
+3. Configure the bot:
 
 ```bash
 cd bot
 npm install
 cp .env.example .env
-# Fill in deployment addresses from script output
+# Fill in SAFE_ADDRESS, PRIVATE_KEY (bot signer), and deployment addresses
 
 # Test with dry run
 DRY_RUN=true npm run dev
@@ -182,7 +215,7 @@ DRY_RUN=true npm run dev
 npm run dev
 ```
 
-See [bot/README.md](bot/README.md) and [bot/DEPLOYMENT_SEQUENCE.md](bot/DEPLOYMENT_SEQUENCE.md) for details.
+See [bot/README.md](bot/README.md) and [DEPLOYMENT_SEQUENCE.md](DEPLOYMENT_SEQUENCE.md) for details.
 
 ## Role Hierarchy
 
@@ -190,7 +223,7 @@ See [bot/README.md](bot/README.md) and [bot/DEPLOYMENT_SEQUENCE.md](bot/DEPLOYME
 |------|--------|-------------|
 | **Owner** | Current Owner | Set curator, sentinels, transfer ownership |
 | **Curator** | Owner | Timelocked: adapters, caps, allocators |
-| **Allocator** | Curator | Allocate/deallocate capital, set liquidity adapter |
+| **Allocator** | Curator | Allocate/deallocate capital, set liquidity adapter (Safe 1/3 multisig for Flagship) |
 | **Sentinel** | Owner | Revoke pending timelocked actions |
 
 ## Timelock Requirements

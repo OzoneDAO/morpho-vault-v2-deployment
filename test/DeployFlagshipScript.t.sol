@@ -2,7 +2,8 @@
 pragma solidity 0.8.28;
 
 import {console} from "forge-std/Test.sol";
-import {MarketParams} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
+import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
+import {IOracle} from "metamorpho-v1.1-morpho-blue/src/interfaces/IOracle.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
 
@@ -162,6 +163,83 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
 
         assertEq(paramsWeth.loanToken, Constants.USDS, "WETH market loan token should be USDS");
         assertEq(paramsWeth.collateralToken, Constants.WETH, "WETH market collateral should be WETH");
+    }
+
+    // ============ MARKET & ORACLE TESTS ============
+
+    function testMarketParamsComplete() public {
+        _deployVault();
+
+        // cbBTC
+        assertEq(paramsCbBtc.loanToken, Constants.USDS);
+        assertEq(paramsCbBtc.collateralToken, Constants.CBBTC);
+        assertEq(paramsCbBtc.oracle, oracleCbBtc);
+        assertEq(paramsCbBtc.irm, Constants.IRM_ADAPTIVE);
+        assertEq(paramsCbBtc.lltv, Constants.LLTV_VOLATILE);
+
+        // wstETH
+        assertEq(paramsWstEth.loanToken, Constants.USDS);
+        assertEq(paramsWstEth.collateralToken, Constants.WSTETH);
+        assertEq(paramsWstEth.oracle, oracleWstEth);
+        assertEq(paramsWstEth.irm, Constants.IRM_ADAPTIVE);
+        assertEq(paramsWstEth.lltv, Constants.LLTV_VOLATILE);
+
+        // WETH
+        assertEq(paramsWeth.loanToken, Constants.USDS);
+        assertEq(paramsWeth.collateralToken, Constants.WETH);
+        assertEq(paramsWeth.oracle, oracleWeth);
+        assertEq(paramsWeth.irm, Constants.IRM_ADAPTIVE);
+        assertEq(paramsWeth.lltv, Constants.LLTV_VOLATILE);
+    }
+
+    function testOraclesReturnValidPrices() public {
+        _deployVault();
+
+        // stUSDS: scale = 10^(36+18-18) = 10^36, price ~$1.05
+        uint256 priceStUsds = IOracle(EXISTING_STUSDS_ORACLE).price();
+        assertGt(priceStUsds, 0.9e36, "stUSDS: price too low");
+        assertLt(priceStUsds, 1.5e36, "stUSDS: price too high");
+
+        // cbBTC: scale = 10^(36+18-8) = 10^46, price ~$97k
+        uint256 priceCbBtc = IOracle(oracleCbBtc).price();
+        assertGt(priceCbBtc, 10_000e46, "cbBTC: price too low");
+        assertLt(priceCbBtc, 500_000e46, "cbBTC: price too high");
+
+        // wstETH: scale = 10^(36+18-18) = 10^36, price ~$3.8k
+        uint256 priceWstEth = IOracle(oracleWstEth).price();
+        assertGt(priceWstEth, 500e36, "wstETH: price too low");
+        assertLt(priceWstEth, 20_000e36, "wstETH: price too high");
+
+        // WETH: scale = 10^(36+18-18) = 10^36, price ~$2.7k
+        uint256 priceWeth = IOracle(oracleWeth).price();
+        assertGt(priceWeth, 500e36, "WETH: price too low");
+        assertLt(priceWeth, 20_000e36, "WETH: price too high");
+    }
+
+    function testMarketSeeding() public {
+        _deployVault();
+
+        IMorpho morpho = IMorpho(Constants.MORPHO_BLUE);
+
+        bytes32[3] memory ids = [marketIdCbBtc, marketIdWstEth, marketIdWeth];
+        for (uint256 i = 0; i < ids.length; i++) {
+            Market memory m = morpho.market(Id.wrap(ids[i]));
+            assertEq(m.totalSupplyAssets, 1e18, "dead supply should be 1 USDS");
+            assertEq(m.totalBorrowAssets, 9e17, "dead borrow should be 0.9 USDS");
+        }
+    }
+
+    function testMarketUtilizationIs90Percent() public {
+        _deployVault();
+
+        IMorpho morpho = IMorpho(Constants.MORPHO_BLUE);
+
+        bytes32[3] memory ids = [marketIdCbBtc, marketIdWstEth, marketIdWeth];
+        for (uint256 i = 0; i < ids.length; i++) {
+            Market memory m = morpho.market(Id.wrap(ids[i]));
+            uint256 utilBps = (uint256(m.totalBorrowAssets) * 10000) / uint256(m.totalSupplyAssets);
+            assertEq(utilBps, 9000, "utilization should be 90%");
+        }
     }
 
     // ============ NO LIQUIDITY ADAPTER TESTS ============
