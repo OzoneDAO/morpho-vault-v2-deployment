@@ -48,8 +48,8 @@ jobs:
 
     env:
       ALLOCATOR: "0xE4d5F54CE1830d5eCC49751021F306CFE7a52649"
-      VAULT_NAME: "sky.money USDS Flagship Capital"
-      VAULT_SYMBOL: "skyMoneyUsdsFlagshipCapital"
+      VAULT_NAME: "sky.money USDS Flagship"
+      VAULT_SYMBOL: "skyMoneyUsdsFlagship"
       # Uncomment after each script is deployed on mainnet
       # VAULT_ADDRESS: "0x..."
       # ADAPTER_ADDRESS: "0x..."
