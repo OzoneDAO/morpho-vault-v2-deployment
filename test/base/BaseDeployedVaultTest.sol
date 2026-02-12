@@ -175,7 +175,8 @@ abstract contract BaseDeployedVaultTest is Test {
         console.log("Expected:", Constants.INITIAL_DEAD_DEPOSIT);
 
         assertGt(deadShares, 0, "Dead address should have shares");
-        assertApproxEqAbs(deadAssets, Constants.INITIAL_DEAD_DEPOSIT, 2, "Dead deposit should be ~1 USDS (1e18)");
+        assertGe(deadAssets, Constants.INITIAL_DEAD_DEPOSIT, "Dead deposit should be >= 1 USDS (may have accrued interest)");
+        assertLt(deadAssets, Constants.INITIAL_DEAD_DEPOSIT * 2, "Dead deposit should be < 2 USDS");
     }
 
     function testMaxRate() public view {
