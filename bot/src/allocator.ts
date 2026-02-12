@@ -499,7 +499,8 @@ async function main() {
       ? targetPerConfiguredMarket - perMarketAllocation
       : 0n;
 
-    if (diff >= config.minAllocationAmount) {
+    // if (diff >= config.minAllocationAmount) {
+    if (diff > 0n) {
       actions.push({
         market,
         action: 'allocate',
@@ -514,7 +515,8 @@ async function main() {
     const numMarkets = markets.filter(m => m.oracle !== '0x0').length;
     const deallocatePerMarket = excessAmount / BigInt(numMarkets || 1);
 
-    if (deallocatePerMarket >= config.minAllocationAmount) {
+    // if (deallocatePerMarket >= config.minAllocationAmount) {
+    if (deallocatePerMarket > 0n) {
       // Clear allocate actions and add deallocate actions
       actions.length = 0;
       for (const market of markets) {
