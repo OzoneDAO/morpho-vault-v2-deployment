@@ -48,33 +48,27 @@ abstract contract BaseDeployedVaultTest is Test {
     }
 
     function testExpectedOwner() public view {
-        address expectedOwner = vm.envOr("OWNER", address(0));
-        if (expectedOwner != address(0)) {
-            console.log("=== Expected Owner Check ===");
-            console.log("Expected Owner:", expectedOwner);
-            console.log("Actual Owner:", vault.owner());
-            assertEq(vault.owner(), expectedOwner, "Owner should match expected");
-        }
+        address expectedOwner = vm.envAddress("OWNER");
+        console.log("=== Expected Owner Check ===");
+        console.log("Expected Owner:", expectedOwner);
+        console.log("Actual Owner:", vault.owner());
+        assertEq(vault.owner(), expectedOwner, "Owner should match expected");
     }
 
     function testExpectedCurator() public view {
-        address expectedCurator = vm.envOr("CURATOR", address(0));
-        if (expectedCurator != address(0)) {
-            console.log("=== Expected Curator Check ===");
-            console.log("Expected Curator:", expectedCurator);
-            console.log("Actual Curator:", vault.curator());
-            assertEq(vault.curator(), expectedCurator, "Curator should match expected");
-        }
+        address expectedCurator = vm.envAddress("CURATOR");
+        console.log("=== Expected Curator Check ===");
+        console.log("Expected Curator:", expectedCurator);
+        console.log("Actual Curator:", vault.curator());
+        assertEq(vault.curator(), expectedCurator, "Curator should match expected");
     }
 
     function testExpectedAllocator() public view {
-        address expectedAllocator = vm.envOr("ALLOCATOR", address(0));
-        if (expectedAllocator != address(0)) {
-            console.log("=== Expected Allocator Check ===");
-            console.log("Expected Allocator:", expectedAllocator);
-            console.log("Is Allocator:", vault.isAllocator(expectedAllocator));
-            assertTrue(vault.isAllocator(expectedAllocator), "Expected address should be allocator");
-        }
+        address expectedAllocator = vm.envAddress("ALLOCATOR");
+        console.log("=== Expected Allocator Check ===");
+        console.log("Expected Allocator:", expectedAllocator);
+        console.log("Is Allocator:", vault.isAllocator(expectedAllocator));
+        assertTrue(vault.isAllocator(expectedAllocator), "Expected address should be allocator");
     }
 
     function testExpectedSentinel() public view {
@@ -88,23 +82,19 @@ abstract contract BaseDeployedVaultTest is Test {
     }
 
     function testExpectedVaultName() public view {
-        string memory expectedName = vm.envOr("VAULT_NAME", string(""));
-        if (bytes(expectedName).length > 0) {
-            console.log("=== Expected Vault Name Check ===");
-            console.log("Expected Name:", expectedName);
-            console.log("Actual Name:", vault.name());
-            assertEq(vault.name(), expectedName, "Vault name should match expected");
-        }
+        string memory expectedName = vm.envString("VAULT_NAME");
+        console.log("=== Expected Vault Name Check ===");
+        console.log("Expected Name:", expectedName);
+        console.log("Actual Name:", vault.name());
+        assertEq(vault.name(), expectedName, "Vault name should match expected");
     }
 
     function testExpectedVaultSymbol() public view {
-        string memory expectedSymbol = vm.envOr("VAULT_SYMBOL", string(""));
-        if (bytes(expectedSymbol).length > 0) {
-            console.log("=== Expected Vault Symbol Check ===");
-            console.log("Expected Symbol:", expectedSymbol);
-            console.log("Actual Symbol:", vault.symbol());
-            assertEq(vault.symbol(), expectedSymbol, "Vault symbol should match expected");
-        }
+        string memory expectedSymbol = vm.envString("VAULT_SYMBOL");
+        console.log("=== Expected Vault Symbol Check ===");
+        console.log("Expected Symbol:", expectedSymbol);
+        console.log("Actual Symbol:", vault.symbol());
+        assertEq(vault.symbol(), expectedSymbol, "Vault symbol should match expected");
     }
 
     function testAdapterConfiguration() public view {
@@ -145,9 +135,13 @@ abstract contract BaseDeployedVaultTest is Test {
         console.log("increaseAbsoluteCap:", increaseAbsoluteCapTL);
         console.log("increaseRelativeCap:", increaseRelativeCapTL);
 
+        uint256 setForceDeallocatePenaltyTL = vault.timelock(IVaultV2.setForceDeallocatePenalty.selector);
+        console.log("setForceDeallocatePenalty:", setForceDeallocatePenaltyTL);
+
         assertEq(addAdapterTL, Constants.TIMELOCK_LOW, "addAdapter should be 3 days");
         assertEq(increaseAbsoluteCapTL, Constants.TIMELOCK_LOW, "increaseAbsoluteCap should be 3 days");
         assertEq(increaseRelativeCapTL, Constants.TIMELOCK_LOW, "increaseRelativeCap should be 3 days");
+        assertEq(setForceDeallocatePenaltyTL, Constants.TIMELOCK_LOW, "setForceDeallocatePenalty should be 3 days");
     }
 
     function testGateAbdication() public view {
@@ -174,9 +168,14 @@ abstract contract BaseDeployedVaultTest is Test {
 
         address dead = address(0xdEaD);
         uint256 deadShares = vault.balanceOf(dead);
+        uint256 deadAssets = vault.convertToAssets(deadShares);
 
         console.log("Dead address shares:", deadShares);
+        console.log("Dead assets (USDS):", deadAssets);
+        console.log("Expected:", Constants.INITIAL_DEAD_DEPOSIT);
+
         assertGt(deadShares, 0, "Dead address should have shares");
+        assertApproxEqAbs(deadAssets, Constants.INITIAL_DEAD_DEPOSIT, 2, "Dead deposit should be ~1 USDS (1e18)");
     }
 
     function testMaxRate() public view {
@@ -184,7 +183,21 @@ abstract contract BaseDeployedVaultTest is Test {
 
         uint256 maxRate = vault.maxRate();
         console.log("Max Rate:", maxRate);
-        assertGt(maxRate, 0, "Max rate should be > 0");
+        console.log("Expected:", Constants.MAX_RATE);
+        assertEq(maxRate, Constants.MAX_RATE, "Max rate should be 200% APR (63419583967)");
+    }
+
+    function testFeesAreZero() public view {
+        console.log("=== Fee Configuration ===");
+
+        uint256 performanceFee = vault.performanceFee();
+        uint256 managementFee = vault.managementFee();
+
+        console.log("Performance Fee:", performanceFee);
+        console.log("Management Fee:", managementFee);
+
+        assertEq(performanceFee, 0, "Performance fee should be 0%");
+        assertEq(managementFee, 0, "Management fee should be 0%");
     }
 
     // ============ USER OPERATIONS ============

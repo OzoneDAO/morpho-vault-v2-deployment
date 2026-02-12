@@ -6,6 +6,7 @@ import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src
 import {IOracle} from "metamorpho-v1.1-morpho-blue/src/interfaces/IOracle.sol";
 
 import {Constants} from "../../src/lib/Constants.sol";
+import {IMorphoChainlinkOracleV2, AggregatorV3Interface} from "../../src/lib/DeployHelpers.sol";
 
 /**
  * @title DeployedCreateWethMarketTest
@@ -38,8 +39,69 @@ contract DeployedCreateWethMarketTest is Test {
         // WETH ~$2.7k → price ~ 2_700 * 1e36
         uint256 price = IOracle(oracleWeth).price();
         console.log("Oracle WETH/USDS price:", price);
-        assertGt(price, 500e36, "price too low (< $500)");
-        assertLt(price, 20_000e36, "price too high (> $20k)");
+        assertGt(price, 1_000e36, "WETH: price too low (< $1,000)");
+        assertLt(price, 8_000e36, "WETH: price too high (> $8,000)");
+    }
+
+    function testOracleFeedConfiguration() public view {
+        console.log("=== Oracle Feed Configuration ===");
+
+        IMorphoChainlinkOracleV2 oracle = IMorphoChainlinkOracleV2(oracleWeth);
+
+        address baseFeed1 = oracle.BASE_FEED_1();
+        address baseFeed2 = oracle.BASE_FEED_2();
+        address quoteFeed1 = oracle.QUOTE_FEED_1();
+        address quoteFeed2 = oracle.QUOTE_FEED_2();
+        address baseVault = oracle.BASE_VAULT();
+        address quoteVault = oracle.QUOTE_VAULT();
+
+        console.log("BASE_FEED_1 (ETH/USD):", baseFeed1);
+        console.log("BASE_FEED_2:", baseFeed2);
+        console.log("QUOTE_FEED_1 (USDS/USD):", quoteFeed1);
+        console.log("QUOTE_FEED_2:", quoteFeed2);
+        console.log("BASE_VAULT:", baseVault);
+        console.log("QUOTE_VAULT:", quoteVault);
+
+        assertEq(baseFeed1, Constants.CHAINLINK_ETH_USD, "BASE_FEED_1 should be ETH/USD");
+        assertEq(baseFeed2, address(0), "BASE_FEED_2 should be unused");
+        assertEq(quoteFeed1, Constants.CHAINLINK_USDS_USD, "QUOTE_FEED_1 should be USDS/USD");
+        assertEq(quoteFeed2, address(0), "QUOTE_FEED_2 should be unused");
+        assertEq(baseVault, address(0), "BASE_VAULT should be unused");
+        assertEq(quoteVault, address(0), "QUOTE_VAULT should be unused");
+
+        // Verify feed decimals
+        uint8 ethDecimals = AggregatorV3Interface(baseFeed1).decimals();
+        uint8 usdsDecimals = AggregatorV3Interface(quoteFeed1).decimals();
+
+        console.log("ETH/USD decimals:", ethDecimals);
+        console.log("USDS/USD decimals:", usdsDecimals);
+
+        assertEq(ethDecimals, 8, "ETH/USD feed should have 8 decimals");
+        assertEq(usdsDecimals, 8, "USDS/USD feed should have 8 decimals");
+    }
+
+    function testOraclePriceCrossValidation() public view {
+        console.log("=== Oracle Price Cross-Validation ===");
+
+        IMorphoChainlinkOracleV2 oracle = IMorphoChainlinkOracleV2(oracleWeth);
+        uint256 oraclePrice = oracle.price();
+        uint256 scaleFactor = oracle.SCALE_FACTOR();
+
+        // Read raw Chainlink answers
+        (, int256 ethUsdAnswer,,,) = AggregatorV3Interface(Constants.CHAINLINK_ETH_USD).latestRoundData();
+        (, int256 usdsUsdAnswer,,,) = AggregatorV3Interface(Constants.CHAINLINK_USDS_USD).latestRoundData();
+
+        console.log("Raw ETH/USD:", uint256(ethUsdAnswer));
+        console.log("Raw USDS/USD:", uint256(usdsUsdAnswer));
+        console.log("Scale factor:", scaleFactor);
+
+        // price = SCALE_FACTOR * ethUsd / usdsUsd
+        uint256 expectedPrice = scaleFactor * uint256(ethUsdAnswer) / uint256(usdsUsdAnswer);
+
+        console.log("Oracle price:", oraclePrice);
+        console.log("Expected from feeds:", expectedPrice);
+
+        assertApproxEqAbs(oraclePrice, expectedPrice, 1, "Oracle price should match computed price from feeds");
     }
 
     function testMarketParams() public view {

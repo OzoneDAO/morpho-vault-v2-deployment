@@ -6,6 +6,7 @@ import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src
 import {IOracle} from "metamorpho-v1.1-morpho-blue/src/interfaces/IOracle.sol";
 
 import {Constants} from "../../src/lib/Constants.sol";
+import {IMorphoChainlinkOracleV2, AggregatorV3Interface} from "../../src/lib/DeployHelpers.sol";
 
 /**
  * @title DeployedCreateCbBtcMarketTest
@@ -38,8 +39,69 @@ contract DeployedCreateCbBtcMarketTest is Test {
         // cbBTC ~$97k → price ~ 97_000 * 1e46
         uint256 price = IOracle(oracleCbBtc).price();
         console.log("Oracle cbBTC/USDS price:", price);
-        assertGt(price, 10_000e46, "price too low (< $10k)");
-        assertLt(price, 500_000e46, "price too high (> $500k)");
+        assertGt(price, 50_000e46, "cbBTC: price too low (< $50k)");
+        assertLt(price, 200_000e46, "cbBTC: price too high (> $200k)");
+    }
+
+    function testOracleFeedConfiguration() public view {
+        console.log("=== Oracle Feed Configuration ===");
+
+        IMorphoChainlinkOracleV2 oracle = IMorphoChainlinkOracleV2(oracleCbBtc);
+
+        address baseFeed1 = oracle.BASE_FEED_1();
+        address baseFeed2 = oracle.BASE_FEED_2();
+        address quoteFeed1 = oracle.QUOTE_FEED_1();
+        address quoteFeed2 = oracle.QUOTE_FEED_2();
+        address baseVault = oracle.BASE_VAULT();
+        address quoteVault = oracle.QUOTE_VAULT();
+
+        console.log("BASE_FEED_1 (cbBTC/USD):", baseFeed1);
+        console.log("BASE_FEED_2:", baseFeed2);
+        console.log("QUOTE_FEED_1 (USDS/USD):", quoteFeed1);
+        console.log("QUOTE_FEED_2:", quoteFeed2);
+        console.log("BASE_VAULT:", baseVault);
+        console.log("QUOTE_VAULT:", quoteVault);
+
+        assertEq(baseFeed1, Constants.CHAINLINK_CBBTC_USD, "BASE_FEED_1 should be cbBTC/USD");
+        assertEq(baseFeed2, address(0), "BASE_FEED_2 should be unused");
+        assertEq(quoteFeed1, Constants.CHAINLINK_USDS_USD, "QUOTE_FEED_1 should be USDS/USD");
+        assertEq(quoteFeed2, address(0), "QUOTE_FEED_2 should be unused");
+        assertEq(baseVault, address(0), "BASE_VAULT should be unused");
+        assertEq(quoteVault, address(0), "QUOTE_VAULT should be unused");
+
+        // Verify feed decimals
+        uint8 cbBtcDecimals = AggregatorV3Interface(baseFeed1).decimals();
+        uint8 usdsDecimals = AggregatorV3Interface(quoteFeed1).decimals();
+
+        console.log("cbBTC/USD decimals:", cbBtcDecimals);
+        console.log("USDS/USD decimals:", usdsDecimals);
+
+        assertEq(cbBtcDecimals, 8, "cbBTC/USD feed should have 8 decimals");
+        assertEq(usdsDecimals, 8, "USDS/USD feed should have 8 decimals");
+    }
+
+    function testOraclePriceCrossValidation() public view {
+        console.log("=== Oracle Price Cross-Validation ===");
+
+        IMorphoChainlinkOracleV2 oracle = IMorphoChainlinkOracleV2(oracleCbBtc);
+        uint256 oraclePrice = oracle.price();
+        uint256 scaleFactor = oracle.SCALE_FACTOR();
+
+        // Read raw Chainlink answers
+        (, int256 cbBtcUsdAnswer,,,) = AggregatorV3Interface(Constants.CHAINLINK_CBBTC_USD).latestRoundData();
+        (, int256 usdsUsdAnswer,,,) = AggregatorV3Interface(Constants.CHAINLINK_USDS_USD).latestRoundData();
+
+        console.log("Raw cbBTC/USD:", uint256(cbBtcUsdAnswer));
+        console.log("Raw USDS/USD:", uint256(usdsUsdAnswer));
+        console.log("Scale factor:", scaleFactor);
+
+        // price = SCALE_FACTOR * cbBtcUsd / usdsUsd
+        uint256 expectedPrice = scaleFactor * uint256(cbBtcUsdAnswer) / uint256(usdsUsdAnswer);
+
+        console.log("Oracle price:", oraclePrice);
+        console.log("Expected from feeds:", expectedPrice);
+
+        assertApproxEqAbs(oraclePrice, expectedPrice, 1, "Oracle price should match computed price from feeds");
     }
 
     function testMarketParams() public view {

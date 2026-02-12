@@ -25,6 +25,27 @@ interface IMorphoChainlinkOracleV2Factory {
     ) external returns (address);
 }
 
+interface IMorphoChainlinkOracleV2 {
+    function BASE_VAULT() external view returns (address);
+    function BASE_VAULT_CONVERSION_SAMPLE() external view returns (uint256);
+    function BASE_FEED_1() external view returns (address);
+    function BASE_FEED_2() external view returns (address);
+    function QUOTE_VAULT() external view returns (address);
+    function QUOTE_VAULT_CONVERSION_SAMPLE() external view returns (uint256);
+    function QUOTE_FEED_1() external view returns (address);
+    function QUOTE_FEED_2() external view returns (address);
+    function SCALE_FACTOR() external view returns (uint256);
+    function price() external view returns (uint256);
+}
+
+interface AggregatorV3Interface {
+    function decimals() external view returns (uint8);
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
+}
+
 interface IMorphoMarketV1AdapterV2Factory {
     function createMorphoMarketV1AdapterV2(address vaultV2Address) external returns (address);
 }
