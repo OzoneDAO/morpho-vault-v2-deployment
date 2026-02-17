@@ -89,13 +89,63 @@ crontab -e
 
 ## How It Works
 
-1. **Verify Safe setup** - Confirms bot is a Safe owner and threshold is 1
-2. **Check permissions** - Verifies the Safe is an allocator on the vault
-3. **Read current state** - Gets total assets, allocated amounts, idle balance
-4. **Calculate targets** - Determines target allocation per market (5% each)
-5. **Check threshold** - Only rebalances if deviation exceeds 1%
-6. **Execute via Safe** - Signs and executes `vault.allocate()` or `vault.deallocate()` through the Safe multisig
-7. **Log results** - Reports final state
+1. **Verify Safe setup** — Confirms bot is a Safe owner and threshold is 1
+2. **Check permissions** — Verifies the Safe is an allocator on the vault
+3. **Read current state** — Gets total assets, adapter total, idle balance
+4. **Early threshold check** — If total deviation < 1%, skip (avoids unnecessary RPC calls)
+5. **Read per-market balances** — Calls `adapter.expectedSupplyAssets(marketId)` for each market
+6. **Compute per-market actions** — Only allocate/deallocate markets that are off-target
+7. **Execute via Safe** — Signs and executes through the Safe multisig with a 50% gas buffer
+8. **Log results** — Reports final state
+
+## Allocation Logic
+
+The core allocation logic lives in `src/allocation-logic.ts` and is tested independently in `src/allocation-logic.test.ts`. It handles these cases:
+
+### Case 1: Fresh vault (zero allocations)
+All markets at 0%. The bot allocates 5% of totalAssets to each market.
+```
+Before: [0%, 0%, 0%, 0%]  → Actions: allocate 5% to each
+After:  [5%, 5%, 5%, 5%]  (20% total)
+```
+
+### Case 2: Partial allocation (some markets funded, some not)
+Happens when some transactions succeed and others fail (e.g., gas issues). The bot reads actual per-market balances and **only** allocates to under-funded markets — it does NOT blindly divide the total deficit by 4.
+```
+Before: [5%, 0%, 5%, 0%]  → Actions: allocate 5% to markets 1 and 3 only
+After:  [5%, 5%, 5%, 5%]  (20% total)
+```
+
+### Case 3: All markets at target
+Total deviation is below the 1% threshold. No actions taken.
+```
+Before: [5%, 5%, 5%, 5%]  → No actions
+```
+
+### Case 4: Over-allocated
+Can happen after large withdrawals shrink totalAssets. The bot deallocates the excess per market.
+```
+Before: [7.5%, 7.5%, 7.5%, 7.5%]  → Actions: deallocate 2.5% from each
+After:  [5%, 5%, 5%, 5%]           (20% total)
+```
+
+### Case 5: Mixed (some over, some under)
+Some markets are above target, others below. The bot issues both allocate and deallocate actions in a single run.
+```
+Before: [8%, 1%, 8%, 1%]  → Actions: deallocate 3% from 0,2; allocate 4% to 1,3
+After:  [5%, 5%, 5%, 5%]  (20% total)
+```
+
+### Case 6: Interest accrual
+Markets accrue interest over time, causing small deviations. As long as the total deviation stays below 1%, no rebalancing is triggered.
+
+## Testing
+
+```bash
+npm test
+```
+
+Runs unit tests for the allocation logic covering all cases above, including the real-world "1 USDS dead deposit" scenario.
 
 ## Configuration
 
@@ -145,14 +195,19 @@ The bot's EOA must be one of the 3 owners on the Safe multisig.
 ### "Safe threshold is N, expected 1"
 The Safe must have a threshold of 1 so the bot can execute autonomously.
 
+### GS013 revert (Safe inner call failure)
+The Safe reverts with GS013 when the inner call fails. Common causes:
+- **Per-market cap exceeded** — The bot tried to allocate beyond 5% to a market that was already at target. Fixed by reading per-market balances instead of assuming equal distribution.
+- **Out of gas** — Gas estimation was too tight due to state changes between estimation and execution. Fixed by adding a 50% gas buffer on `estimateContractGas`.
+- **Insufficient idle balance** — Not enough USDS in the vault to allocate.
+
 ### "Allocation exceeds cap"
-The vault has 5% relative cap per market. If you're hitting this:
-- Check if there are existing allocations
+The vault has 5% relative cap per market and 20% total. If you're hitting this:
+- Check existing per-market allocations (the bot logs these)
 - Reduce allocation amount
 - Or increase caps via curator (timelocked)
 
 ### Transaction reverts
 Common causes:
-- Insufficient idle balance
 - Oracle address incorrect
 - Market doesn't exist (needs to be created first)

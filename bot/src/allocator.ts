@@ -18,10 +18,11 @@
  *   - ADAPTER_ADDRESS: MorphoMarketV1AdapterV2 address
  */
 
-import { createPublicClient, createWalletClient, http, formatEther, parseEther, encodeFunctionData, hexToBytes, bytesToHex, type Address, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, http, formatEther, parseEther, encodeFunctionData, encodeAbiParameters, keccak256, hexToBytes, bytesToHex, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 import 'dotenv/config';
+import { computeAllocationActions } from './allocation-logic.js';
 
 // ============ CONFIGURATION ============
 
@@ -274,10 +275,17 @@ function encodeMarketParams(market: MarketConfig): Hex {
 }
 
 function computeMarketId(market: MarketConfig): Hex {
-  const params = encodeMarketParams(market);
-  // In production, you'd compute keccak256 of the encoded params
-  // For now, we'll rely on the adapter's tracking
-  return params;
+  const encoded = encodeAbiParameters(
+    [
+      { name: 'loanToken', type: 'address' },
+      { name: 'collateralToken', type: 'address' },
+      { name: 'oracle', type: 'address' },
+      { name: 'irm', type: 'address' },
+      { name: 'lltv', type: 'uint256' },
+    ],
+    [USDS, market.collateral, market.oracle, IRM_ADAPTIVE, market.lltv],
+  );
+  return keccak256(encoded);
 }
 
 function log(message: string, data?: unknown) {
@@ -478,76 +486,50 @@ async function main() {
     return;
   }
 
-  // Determine allocation actions for each market
-  const actions: Array<{
-    market: MarketConfig;
-    action: 'allocate' | 'deallocate';
-    amount: bigint;
-  }> = [];
-
-  for (const market of markets) {
-    // Skip if oracle not configured
-    if (market.oracle === '0x0') {
-      log(`Skipping ${market.name}: oracle not configured`);
-      continue;
-    }
-
-    const encodedParams = encodeMarketParams(market);
-    market.encodedParams = encodedParams;
-
-    // For simplicity, we'll allocate equal amounts to each market
-    // In production, you might want to track per-market allocation and rebalance individually
-
-    // Calculate how much to allocate to reach target
-    // Since we can't easily query per-market allocation without market IDs from deployment,
-    // we'll do a simple proportional allocation
-
-    const currentTotalAllocated = adapterAssets;
-    const numMarkets = markets.filter(m => m.oracle !== '0x0').length;
-    const targetPerConfiguredMarket = targetTotalAllocated / BigInt(numMarkets);
-
-    // For simplicity, assume equal distribution and allocate the difference
-    const perMarketAllocation = currentTotalAllocated / BigInt(numMarkets || 1);
-    const diff = targetPerConfiguredMarket > perMarketAllocation
-      ? targetPerConfiguredMarket - perMarketAllocation
-      : 0n;
-
-    // if (diff >= config.minAllocationAmount) {
-    if (diff > 0n) {
-      actions.push({
-        market,
-        action: 'allocate',
-        amount: diff,
-      });
-    }
+  // Read per-market allocations from the adapter
+  const configuredMarkets = markets.filter(m => m.oracle !== '0x0');
+  for (const market of configuredMarkets) {
+    market.encodedParams = encodeMarketParams(market);
   }
 
-  // If we need to deallocate (over-allocated), handle that
-  if (adapterAssets > targetTotalAllocated) {
-    const excessAmount = adapterAssets - targetTotalAllocated;
-    const numMarkets = markets.filter(m => m.oracle !== '0x0').length;
-    const deallocatePerMarket = excessAmount / BigInt(numMarkets || 1);
+  const marketIds = configuredMarkets.map(m => computeMarketId(m));
+  const perMarketAssets = await Promise.all(
+    marketIds.map(id =>
+      publicClient.readContract({
+        address: config.adapterAddress,
+        abi: adapterAbi,
+        functionName: 'expectedSupplyAssets',
+        args: [id],
+      }),
+    ),
+  );
 
-    // if (deallocatePerMarket >= config.minAllocationAmount) {
-    if (deallocatePerMarket > 0n) {
-      // Clear allocate actions and add deallocate actions
-      actions.length = 0;
-      for (const market of markets) {
-        if (market.oracle === '0x0') continue;
-        market.encodedParams = encodeMarketParams(market);
-        actions.push({
-          market,
-          action: 'deallocate',
-          amount: deallocatePerMarket,
-        });
-      }
-    }
+  log('Per-market allocations:');
+  for (let i = 0; i < configuredMarkets.length; i++) {
+    log(`  ${configuredMarkets[i].name}: ${formatEther(perMarketAssets[i])} USDS`);
   }
 
-  if (actions.length === 0) {
-    log('No actions needed (amounts below minimum threshold)');
+  // Compute per-market allocation/deallocation actions
+  const result = computeAllocationActions({
+    totalAssets,
+    adapterAssets,
+    perMarketAssets,
+    targetAllocatedPercent: config.targetAllocatedPercent,
+    targetPerMarketPercent: config.targetPerMarketPercent,
+    rebalanceThresholdBps: config.rebalanceThresholdBps,
+  });
+
+  if (result.skipped) {
+    log(`No actions needed (${result.reason})`);
     return;
   }
+
+  // Map computed actions back to market configs
+  const actions = result.actions.map(a => ({
+    market: configuredMarkets[a.marketIndex],
+    action: a.action,
+    amount: a.amount,
+  }));
 
   log(`Executing ${actions.length} allocation actions:`);
 
