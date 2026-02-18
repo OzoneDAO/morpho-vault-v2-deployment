@@ -94,6 +94,9 @@ const markets: MarketConfig[] = [
 const USDS = '0xdC035D45d973E3EC169d2276DDab16f1e407384F' as Address;
 const IRM_ADAPTIVE = '0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC' as Address;
 
+// Safe MultiSendCallOnly (v1.4.1) — matches our Safe version
+const MULTISEND = '0x9641d764fc13c8B624c04430C7356C1C7C8102e2' as Address;
+
 // ============ ABIs ============
 
 const vaultAbi = [
@@ -297,6 +300,24 @@ function log(message: string, data?: unknown) {
 }
 
 /**
+ * Pack multiple calls into a Safe MultiSend payload.
+ * Each tx: uint8(operation=0) ++ address(to) ++ uint256(value=0) ++ uint256(dataLen) ++ bytes(data)
+ */
+function packMultiSendTxs(txs: { to: Address; data: Hex }[]): Hex {
+  let packed = '0x';
+  for (const tx of txs) {
+    const data = tx.data.slice(2);
+    const dataLength = data.length / 2;
+    packed += '00';                                       // operation: CALL
+    packed += tx.to.slice(2).toLowerCase();               // to: 20 bytes
+    packed += '0'.repeat(64);                             // value: uint256(0)
+    packed += dataLength.toString(16).padStart(64, '0');  // dataLength: uint256
+    packed += data;                                       // data bytes
+  }
+  return packed as Hex;
+}
+
+/**
  * Execute a transaction through the Safe multisig.
  * Signs the Safe transaction hash using eth_sign and calls execTransaction.
  * Works for threshold=1 Safes where the bot is one of the owners.
@@ -308,6 +329,7 @@ async function executeSafeTransaction(
   safeAddress: Address,
   to: Address,
   data: Hex,
+  operation: number = 0, // 0 = CALL, 1 = DELEGATECALL
 ): Promise<Hex> {
   // Get current Safe nonce
   const nonce = await publicClient.readContract({
@@ -321,7 +343,7 @@ async function executeSafeTransaction(
     address: safeAddress,
     abi: safeAbi,
     functionName: 'getTransactionHash',
-    args: [to, 0n, data, 0, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, nonce],
+    args: [to, 0n, data, operation, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, nonce],
   });
 
   // Sign using eth_sign (signMessage adds "\x19Ethereum Signed Message:\n32" prefix)
@@ -341,7 +363,7 @@ async function executeSafeTransaction(
     address: safeAddress,
     abi: safeAbi,
     functionName: 'execTransaction',
-    args: [to, 0n, data, 0, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, adjustedSig],
+    args: [to, 0n, data, operation, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, adjustedSig],
   });
   const gasWithBuffer = estimatedGas * 150n / 100n; // 50% buffer
 
@@ -352,7 +374,7 @@ async function executeSafeTransaction(
     address: safeAddress,
     abi: safeAbi,
     functionName: 'execTransaction',
-    args: [to, 0n, data, 0, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, adjustedSig],
+    args: [to, 0n, data, operation, 0n, 0n, 0n, ZERO_ADDRESS, ZERO_ADDRESS, adjustedSig],
     gas: gasWithBuffer,
   });
 
@@ -524,91 +546,132 @@ async function main() {
     return;
   }
 
-  // Map computed actions back to market configs
-  const actions = result.actions.map(a => ({
-    market: configuredMarkets[a.marketIndex],
-    action: a.action,
-    amount: a.amount,
-  }));
+  // Separate deallocations and allocations
+  const deallocateActions = result.actions.filter(a => a.action === 'deallocate');
+  const allocateActions = result.actions.filter(a => a.action === 'allocate');
 
-  log(`Executing ${actions.length} allocation actions:`);
-
+  // Fresh reads for allocation markets (all in parallel, single consistent snapshot)
   const relativeCapWad = bpsToWad(config.targetPerMarketPercent);
+  const freshExpectedByIndex = new Map<number, bigint>();
+  let freshTotalAssets = totalAssets;
 
-  for (const { market, action, amount } of actions) {
-    if (config.dryRun) {
-      log(`  ${action} ${formatEther(amount)} USDS to ${market.name} [DRY RUN]`);
+  if (allocateActions.length > 0) {
+    const allocateMarketIds = allocateActions.map(a => computeMarketId(configuredMarkets[a.marketIndex]));
+    const [freshTotal, ...freshExpected] = await Promise.all([
+      publicClient.readContract({
+        address: config.vaultAddress,
+        abi: vaultAbi,
+        functionName: 'totalAssets',
+      }),
+      ...allocateMarketIds.map(id =>
+        publicClient.readContract({
+          address: config.adapterAddress,
+          abi: adapterAbi,
+          functionName: 'expectedSupplyAssets',
+          args: [id],
+        }),
+      ),
+    ]);
+    freshTotalAssets = freshTotal;
+    allocateActions.forEach((a, i) => freshExpectedByIndex.set(a.marketIndex, freshExpected[i]));
+  }
+
+  // Compute cap limit with headroom (shared by all allocations in this batch)
+  const capLimit = computeCapLimit(freshTotalAssets, relativeCapWad);
+  const headroom = capLimit * CAP_HEADROOM_BPS / 10000n;
+  const effectiveCap = capLimit - headroom;
+
+  // Build vault calls: deallocations first, then allocations
+  // Order matters: deallocations free up idle balance for subsequent allocations
+  const vaultCalls: { name: string; action: string; amount: bigint; calldata: Hex }[] = [];
+
+  for (const a of deallocateActions) {
+    const market = configuredMarkets[a.marketIndex];
+    vaultCalls.push({
+      name: market.name,
+      action: 'deallocate',
+      amount: a.amount,
+      calldata: encodeFunctionData({
+        abi: vaultAbi,
+        functionName: 'deallocate',
+        args: [config.adapterAddress, market.encodedParams!, a.amount],
+      }),
+    });
+  }
+
+  for (const a of allocateActions) {
+    const market = configuredMarkets[a.marketIndex];
+    const freshExpected = freshExpectedByIndex.get(a.marketIndex)!;
+    const execAmount = effectiveCap > freshExpected ? effectiveCap - freshExpected : 0n;
+
+    if (execAmount === 0n) {
+      log(`  ${market.name}: already at cap (${formatEther(freshExpected)} >= ${formatEther(effectiveCap)}), skipping`);
       continue;
     }
 
-    try {
-      const functionName = action === 'allocate' ? 'allocate' : 'deallocate';
-      let execAmount = amount;
-
-      if (action === 'allocate') {
-        // Re-read fresh state right before execution to avoid RelativeCapExceeded.
-        // The vault checks: caps[id].allocation <= totalAssets * relativeCap / WAD
-        // Interest accrues between our initial read and execution, so the pre-computed
-        // amount may overshoot the cap. Instead, we replicate the vault's exact math
-        // using fresh on-chain values: amount = capLimit - currentExpectedSupplyAssets.
-        const marketId = computeMarketId(market);
-        const [freshTotalAssets, freshExpectedSupplyAssets] = await Promise.all([
-          publicClient.readContract({
-            address: config.vaultAddress,
-            abi: vaultAbi,
-            functionName: 'totalAssets',
-          }),
-          publicClient.readContract({
-            address: config.adapterAddress,
-            abi: adapterAbi,
-            functionName: 'expectedSupplyAssets',
-            args: [marketId],
-          }),
-        ]);
-
-        const capLimit = computeCapLimit(freshTotalAssets, relativeCapWad);
-        const headroom = capLimit * CAP_HEADROOM_BPS / 10000n;
-        const effectiveCap = capLimit - headroom;
-        execAmount = effectiveCap > freshExpectedSupplyAssets
-          ? effectiveCap - freshExpectedSupplyAssets
-          : 0n;
-
-        if (execAmount === 0n) {
-          log(`  ${market.name}: already at cap (${formatEther(freshExpectedSupplyAssets)} >= ${formatEther(effectiveCap)}), skipping`);
-          continue;
-        }
-
-        log(`  allocate ${formatEther(execAmount)} USDS to ${market.name} (cap: ${formatEther(capLimit)}, headroom: ${formatEther(headroom)}, current: ${formatEther(freshExpectedSupplyAssets)})`);
-      } else {
-        log(`  deallocate ${formatEther(execAmount)} USDS from ${market.name}`);
-      }
-
-      // Encode the vault call data
-      const callData = encodeFunctionData({
+    vaultCalls.push({
+      name: market.name,
+      action: 'allocate',
+      amount: execAmount,
+      calldata: encodeFunctionData({
         abi: vaultAbi,
-        functionName,
+        functionName: 'allocate',
         args: [config.adapterAddress, market.encodedParams!, execAmount],
-      });
+      }),
+    });
+  }
 
-      // Execute through Safe multisig
-      const hash = await executeSafeTransaction(
-        publicClient,
-        walletClient,
-        account,
-        config.safeAddress,
-        config.vaultAddress,
-        callData,
-      );
+  if (vaultCalls.length === 0) {
+    log('All markets at cap after fresh reads, no actions needed');
+    return;
+  }
 
-      log(`  Transaction submitted via Safe: ${hash}`);
+  // Log all actions
+  log(`Batching ${vaultCalls.length} actions into single transaction:`);
+  for (const call of vaultCalls) {
+    const direction = call.action === 'allocate' ? 'to' : 'from';
+    log(`  ${call.action} ${formatEther(call.amount)} USDS ${direction} ${call.name}`);
+  }
+  if (allocateActions.length > 0) {
+    log(`  (cap: ${formatEther(capLimit)}, headroom: ${formatEther(headroom)})`);
+  }
 
-      // Wait for confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      log(`  Confirmed in block ${receipt.blockNumber}, status: ${receipt.status}`);
-    } catch (error) {
-      log(`  ERROR: ${error instanceof Error ? error.message : String(error)}`);
-      // Continue with other actions even if one fails
-    }
+  if (config.dryRun) {
+    log('[DRY RUN] Skipping transaction');
+    return;
+  }
+
+  // Pack into MultiSend and execute as single Safe transaction
+  try {
+    const packed = packMultiSendTxs(vaultCalls.map(c => ({ to: config.vaultAddress, data: c.calldata })));
+    const multiSendData = encodeFunctionData({
+      abi: [{
+        name: 'multiSend',
+        type: 'function',
+        stateMutability: 'payable',
+        inputs: [{ name: 'transactions', type: 'bytes' }],
+        outputs: [],
+      }] as const,
+      functionName: 'multiSend',
+      args: [packed],
+    });
+
+    const hash = await executeSafeTransaction(
+      publicClient,
+      walletClient,
+      account,
+      config.safeAddress,
+      MULTISEND,
+      multiSendData,
+      1, // DELEGATECALL — MultiSend runs as Safe, so vault sees msg.sender = Safe
+    );
+
+    log(`Transaction submitted via Safe: ${hash}`);
+
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    log(`Confirmed in block ${receipt.blockNumber}, status: ${receipt.status}`);
+  } catch (error) {
+    log(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // Log final state
