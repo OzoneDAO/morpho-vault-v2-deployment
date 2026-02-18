@@ -14,12 +14,29 @@ import {Constants} from "../../src/lib/Constants.sol";
 abstract contract BaseDeployedVaultTest is Test {
     // State
     IVaultV2 public vault;
-    IERC20 public usds;
+    IERC20 public loanToken;
+
+    // ============ VIRTUAL FUNCTIONS ============
+
+    /// @notice Loan token address (override for non-USDS vaults)
+    function _loanTokenAddress() internal pure virtual returns (address) {
+        return Constants.USDS;
+    }
+
+    /// @notice Initial dead deposit amount (override for 6-dec tokens)
+    function _initialDeadDeposit() internal pure virtual returns (uint256) {
+        return Constants.INITIAL_DEAD_DEPOSIT;
+    }
+
+    /// @notice Deposit amount scaled to token decimals (override for 6-dec tokens)
+    function _depositAmount() internal pure virtual returns (uint256) {
+        return 100e18;
+    }
 
     function setUp() public virtual {
         address vaultAddr = vm.envOr("VAULT_ADDRESS", address(0));
         vault = IVaultV2(vaultAddr);
-        usds = IERC20(Constants.USDS);
+        loanToken = IERC20(_loanTokenAddress());
 
         console.log("Testing vault at:", address(vault));
     }
@@ -35,7 +52,7 @@ abstract contract BaseDeployedVaultTest is Test {
         console.log("Total Assets:", vault.totalAssets());
         console.log("Total Supply:", vault.totalSupply());
 
-        assertEq(vault.asset(), Constants.USDS, "Asset should be USDS");
+        assertEq(vault.asset(), _loanTokenAddress(), "Asset should match loan token");
     }
 
     function testRoleConfiguration() public view {
@@ -169,14 +186,15 @@ abstract contract BaseDeployedVaultTest is Test {
         address dead = address(0xdEaD);
         uint256 deadShares = vault.balanceOf(dead);
         uint256 deadAssets = vault.convertToAssets(deadShares);
+        uint256 expectedDeadDeposit = _initialDeadDeposit();
 
         console.log("Dead address shares:", deadShares);
-        console.log("Dead assets (USDS):", deadAssets);
-        console.log("Expected:", Constants.INITIAL_DEAD_DEPOSIT);
+        console.log("Dead assets:", deadAssets);
+        console.log("Expected:", expectedDeadDeposit);
 
         assertGt(deadShares, 0, "Dead address should have shares");
-        assertGe(deadAssets, Constants.INITIAL_DEAD_DEPOSIT, "Dead deposit should be >= 1 USDS (may have accrued interest)");
-        assertLt(deadAssets, Constants.INITIAL_DEAD_DEPOSIT * 2, "Dead deposit should be < 2 USDS");
+        assertGe(deadAssets, expectedDeadDeposit, "Dead deposit should be >= initial (may have accrued interest)");
+        assertLt(deadAssets, expectedDeadDeposit * 2, "Dead deposit should be < 2x initial");
     }
 
     function testMaxRate() public view {
@@ -205,12 +223,12 @@ abstract contract BaseDeployedVaultTest is Test {
 
     function testUserDeposit() public {
         address user = makeAddr("testUser");
-        uint256 depositAmount = 100 * 1e18;
+        uint256 depositAmount = _depositAmount();
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
 
         uint256 sharesBefore = vault.balanceOf(user);
         uint256 expectedShares = vault.previewDeposit(depositAmount);
@@ -231,12 +249,12 @@ abstract contract BaseDeployedVaultTest is Test {
 
     function testUserWithdraw() public {
         address user = makeAddr("testUser2");
-        uint256 depositAmount = 100 * 1e18;
+        uint256 depositAmount = _depositAmount();
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         console.log("=== User Withdraw Test ===");
@@ -254,28 +272,28 @@ abstract contract BaseDeployedVaultTest is Test {
 
         assertEq(assetsReceived, expectedAssets, "Assets should match preview");
         assertEq(vault.balanceOf(user), shares - withdrawShares, "Shares should decrease");
-        assertEq(usds.balanceOf(user), assetsReceived, "USDS balance should match");
+        assertEq(loanToken.balanceOf(user), assetsReceived, "Loan token balance should match");
 
         vm.stopPrank();
     }
 
     function testFullDepositWithdrawCycle() public {
         address user = makeAddr("cycleUser");
-        uint256 depositAmount = 1000 * 1e18;
+        uint256 depositAmount = _depositAmount() * 10;
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
 
         console.log("=== Full Cycle Test ===");
-        console.log("Initial USDS:", depositAmount);
+        console.log("Initial deposit:", depositAmount);
 
         uint256 shares = vault.deposit(depositAmount, user);
         console.log("Shares after deposit:", shares);
 
         uint256 assetsBack = vault.redeem(shares, user, user);
-        console.log("USDS after full redeem:", assetsBack);
+        console.log("Assets after full redeem:", assetsBack);
 
         assertApproxEqAbs(assetsBack, depositAmount, 2, "Should get back ~same amount");
         assertEq(vault.balanceOf(user), 0, "Should have 0 shares");
@@ -288,14 +306,14 @@ abstract contract BaseDeployedVaultTest is Test {
     function testSharePrice() public view {
         console.log("=== Share Price ===");
 
-        uint256 oneShare = 1e18;
+        uint256 oneShare = 10 ** vault.decimals();
         uint256 assetsPerShare = vault.convertToAssets(oneShare);
 
-        uint256 oneUsds = 1e18;
-        uint256 sharesPerUsds = vault.convertToShares(oneUsds);
+        uint256 oneUnit = 10 ** vault.decimals();
+        uint256 sharesPerUnit = vault.convertToShares(oneUnit);
 
-        console.log("Assets per 1e18 shares:", assetsPerShare);
-        console.log("Shares per 1 USDS:", sharesPerUsds);
+        console.log("Assets per 1 share:", assetsPerShare);
+        console.log("Shares per 1 unit:", sharesPerUnit);
 
         assertGt(assetsPerShare, 0, "Should have positive conversion");
     }

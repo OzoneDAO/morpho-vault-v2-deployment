@@ -4,23 +4,34 @@ pragma solidity 0.8.28;
 import {console} from "forge-std/Test.sol";
 import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 
-import {Constants} from "../src/lib/Constants.sol";
-import {BaseDeployedVaultTest} from "./base/BaseDeployedVaultTest.sol";
+import {Constants} from "../../src/lib/Constants.sol";
+import {BaseDeployedVaultTest} from "../base/BaseDeployedVaultTest.sol";
 
 /**
- * @title DeployedUSDSVaultTest
- * @notice Tests against already-deployed USDS vault contracts on Tenderly or mainnet fork
+ * @title DeployedUsdtRiskCapitalVaultTest
+ * @notice Tests against already-deployed USDT Risk Capital vault on Tenderly or mainnet fork
  * @dev Set VAULT_ADDRESS env var to test a specific deployed vault
  */
-contract DeployedUSDSVaultTest is BaseDeployedVaultTest {
-    // ============ USDS-SPECIFIC TESTS ============
+contract DeployedUsdtRiskCapitalVaultTest is BaseDeployedVaultTest {
+    function _loanTokenAddress() internal pure override returns (address) {
+        return Constants.USDT;
+    }
+
+    function _initialDeadDeposit() internal pure override returns (uint256) {
+        return Constants.INITIAL_DEAD_DEPOSIT_6DEC;
+    }
+
+    function _depositAmount() internal pure override returns (uint256) {
+        return 100e6;
+    }
+
+    // ============ USDT RISK CAPITAL SPECIFIC TESTS ============
 
     function testLiquidityAdapterSet() public view {
         console.log("=== Liquidity Adapter Check ===");
         address liquidityAdapter = vault.liquidityAdapter();
         console.log("Liquidity Adapter:", liquidityAdapter);
 
-        // USDS vault should have a liquidity adapter (deposits auto-allocated)
         assertEq(liquidityAdapter, vault.adapters(0), "Liquidity adapter should match first adapter");
     }
 
@@ -43,8 +54,6 @@ contract DeployedUSDSVaultTest is BaseDeployedVaultTest {
         uint256 utilizationBps = (uint256(marketState.totalBorrowAssets) * 10000) / uint256(marketState.totalSupplyAssets);
         console.log("Utilization (bps):", utilizationBps);
 
-        // Allow ±50 bps tolerance for interest accrual and rounding over time
-        // Initial deployment targets 9000 bps (90%), but interest accrual shifts this slightly
         assertApproxEqAbs(utilizationBps, 9000, 50, "Market utilization should be ~90% (9000 bps, +/- 50 bps)");
     }
 }

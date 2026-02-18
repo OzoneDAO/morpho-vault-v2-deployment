@@ -7,14 +7,14 @@ import {IOracle} from "metamorpho-v1.1-morpho-blue/src/interfaces/IOracle.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
 
-import {CreateVault} from "../script/flagship/1_CreateVault.s.sol";
-import {CreateCbBtcMarket} from "../script/flagship/2_CreateCbBtcMarket.s.sol";
-import {CreateWstEthMarket} from "../script/flagship/3_CreateWstEthMarket.s.sol";
-import {CreateWethMarket} from "../script/flagship/4_CreateWethMarket.s.sol";
-import {ConfigureVault} from "../script/flagship/5_ConfigureVault.s.sol";
+import {CreateVault} from "../../script/flagship/1_CreateVault.s.sol";
+import {CreateCbBtcMarket} from "../../script/flagship/2_CreateCbBtcMarket.s.sol";
+import {CreateWstEthMarket} from "../../script/flagship/3_CreateWstEthMarket.s.sol";
+import {CreateWethMarket} from "../../script/flagship/4_CreateWethMarket.s.sol";
+import {ConfigureVault} from "../../script/flagship/5_ConfigureVault.s.sol";
 
-import {Constants} from "../src/lib/Constants.sol";
-import {BaseVaultTest} from "./base/BaseVaultTest.sol";
+import {Constants} from "../../src/lib/Constants.sol";
+import {BaseVaultTest} from "../base/BaseVaultTest.sol";
 
 /**
  * @title DeployFlagshipScriptTest
@@ -260,11 +260,11 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
         deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
         vm.stopPrank();
 
-        uint256 vaultBalance = usds.balanceOf(address(vault));
+        uint256 vaultBalance = loanToken.balanceOf(address(vault));
         assertEq(vaultBalance, depositAmount + Constants.INITIAL_DEAD_DEPOSIT, "All deposits should be idle in vault");
 
         IMorphoMarketV1AdapterV2 adapter = IMorphoMarketV1AdapterV2(adapterAddress);
@@ -326,12 +326,12 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
         deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
         vm.stopPrank();
 
         // Without liquidity adapter, 100% of deposits stay idle in vault
-        uint256 vaultBalance = usds.balanceOf(address(vault));
+        uint256 vaultBalance = loanToken.balanceOf(address(vault));
         assertEq(vaultBalance, depositAmount + Constants.INITIAL_DEAD_DEPOSIT, "All deposits should be idle in vault");
 
         // User should have received shares for their deposit
@@ -352,7 +352,7 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
         deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
         vm.stopPrank();
 

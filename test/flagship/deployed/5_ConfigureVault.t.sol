@@ -5,9 +5,9 @@ import {console} from "forge-std/Test.sol";
 import {IOracle} from "metamorpho-v1.1-morpho-blue/src/interfaces/IOracle.sol";
 import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
 
-import {Constants} from "../../src/lib/Constants.sol";
-import {IMorphoChainlinkOracleV2} from "../../src/lib/DeployHelpers.sol";
-import {BaseDeployedVaultTest} from "../base/BaseDeployedVaultTest.sol";
+import {Constants} from "../../../src/lib/Constants.sol";
+import {IMorphoChainlinkOracleV2} from "../../../src/lib/DeployHelpers.sol";
+import {BaseDeployedVaultTest} from "../../base/BaseDeployedVaultTest.sol";
 
 /// @dev Minimal interface for ERC4626 convertToAssets (avoids import conflicts)
 interface IERC4626Minimal {
@@ -90,16 +90,16 @@ contract DeployedConfigureVaultTest is BaseDeployedVaultTest {
         address user = makeAddr("idleUser");
         uint256 depositAmount = 1000 * 1e18;
 
-        uint256 vaultBalanceBefore = usds.balanceOf(address(vault));
+        uint256 vaultBalanceBefore = loanToken.balanceOf(address(vault));
 
         deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
         vm.stopPrank();
 
-        uint256 vaultBalanceAfter = usds.balanceOf(address(vault));
+        uint256 vaultBalanceAfter = loanToken.balanceOf(address(vault));
         assertEq(vaultBalanceAfter, vaultBalanceBefore + depositAmount, "Deposits should stay idle in vault");
 
         console.log("Vault balance before:", vaultBalanceBefore);

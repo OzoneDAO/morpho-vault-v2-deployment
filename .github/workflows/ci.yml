@@ -13,9 +13,9 @@ env:
   SENTINEL: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
 
 jobs:
-  # ============ USDS Vault Tests ============
-  test-usds-vault:
-    name: USDS Vault Tests
+  # ============ USDS Risk Capital Vault Tests ============
+  test-usds-risk-capital:
+    name: USDS Risk Capital Vault Tests
     runs-on: ubuntu-latest
 
     env:
@@ -33,13 +33,100 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Run USDS vault deployment tests
+      - name: Run USDS Risk Capital vault deployment tests
         run: |
-          forge test --match-contract DeployUSDSScript --fork-url ${{ secrets.RPC_URL }} -vvvv
+          forge test --match-contract DeployUsdsRiskCapitalScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
-      - name: Run USDS vault deployed tests
+      - name: Run USDS Risk Capital vault deployed tests
         run: |
-          forge test --match-contract DeployedUSDSVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDS_BLOCK_NUMBER }} -vvvv
+          forge test --match-contract DeployedUsdsRiskCapitalVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDS_BLOCK_NUMBER }} -vvvv
+
+  # ============ USDC Risk Capital Vault Tests ============
+  test-usdc-risk-capital:
+    name: USDC Risk Capital Vault Tests
+    runs-on: ubuntu-latest
+
+    env:
+      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
+      # VAULT_NAME: "sky.money USDC Risk Capital"
+      # VAULT_SYMBOL: "skyMoneyUsdcRiskCapital"
+      # VAULT_ADDRESS: "0x..."
+      # USDC_BLOCK_NUMBER: 0
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run USDC Risk Capital vault deployment tests
+        run: |
+          forge test --match-contract DeployUsdcRiskCapitalScript --fork-url ${{ secrets.RPC_URL }} -vvvv
+
+      # Uncomment after USDC Risk Capital vault is deployed on mainnet
+      # - name: Run USDC Risk Capital vault deployed tests
+      #   run: |
+      #     forge test --match-contract DeployedUsdcRiskCapitalVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDC_BLOCK_NUMBER }} -vvvv
+
+  # ============ USDT Risk Capital Vault Tests ============
+  test-usdt-risk-capital:
+    name: USDT Risk Capital Vault Tests
+    runs-on: ubuntu-latest
+
+    env:
+      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
+      # VAULT_NAME: "sky.money USDT Risk Capital"
+      # VAULT_SYMBOL: "skyMoneyUsdtRiskCapital"
+      # VAULT_ADDRESS: "0x..."
+      # USDT_RC_BLOCK_NUMBER: 0
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run USDT Risk Capital vault deployment tests
+        run: |
+          forge test --match-contract DeployUsdtRiskCapitalScript --fork-url ${{ secrets.RPC_URL }} -vvvv
+
+      # Uncomment after USDT Risk Capital vault is deployed on mainnet
+      # - name: Run USDT Risk Capital vault deployed tests
+      #   run: |
+      #     forge test --match-contract DeployedUsdtRiskCapitalVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDT_RC_BLOCK_NUMBER }} -vvvv
+
+  # ============ USDT Savings Vault Tests ============
+  test-usdt-savings:
+    name: USDT Savings Vault Tests
+    runs-on: ubuntu-latest
+
+    env:
+      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
+      # VAULT_NAME: "sky.money USDT Savings"
+      # VAULT_SYMBOL: "skyMoneyUsdtSavings"
+      # VAULT_ADDRESS: "0x..."
+      # USDT_SAV_BLOCK_NUMBER: 0
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run USDT Savings vault deployment tests
+        run: |
+          forge test --match-contract DeployUsdtSavingsScript --fork-url ${{ secrets.RPC_URL }} -vvvv
+
+      # Uncomment after USDT Savings vault is deployed on mainnet
+      # - name: Run USDT Savings vault deployed tests
+      #   run: |
+      #     forge test --match-contract DeployedUsdtSavingsVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDT_SAV_BLOCK_NUMBER }} -vvvv
 
   # ============ Flagship Vault Tests ============
   test-flagship-vault:
@@ -73,4 +160,4 @@ jobs:
       # Uncomment after Flagship vault is deployed on mainnet
       # - name: Run Flagship deployed tests
       #   run: |
-      #     forge test --match-path "test/deployed-flagship/*" --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.FLAGSHIP_BLOCK_NUMBER }} -vvvv
+      #     forge test --match-path "test/flagship/deployed/*" --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.FLAGSHIP_BLOCK_NUMBER }} -vvvv

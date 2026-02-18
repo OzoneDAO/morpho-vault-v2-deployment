@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 
-import {Constants} from "../../src/lib/Constants.sol";
+import {Constants} from "../../../src/lib/Constants.sol";
 
 /**
  * @title DeployedCreateVaultTest

@@ -14,11 +14,11 @@ import {Constants} from "../../src/lib/Constants.sol";
 abstract contract BaseVaultTest is Test {
     // State (set by child contracts)
     IVaultV2 public vault;
-    IERC20 public usds;
+    IERC20 public loanToken;
     address public deployer;
     uint256 public deployerPrivateKey;
 
-    // ============ ABSTRACT FUNCTIONS ============
+    // ============ VIRTUAL FUNCTIONS ============
 
     /// @notice Deploy the vault and set state variables
     function _deployVault() internal virtual;
@@ -30,6 +30,16 @@ abstract contract BaseVaultTest is Test {
         address allocator,
         address sentinel
     ) internal virtual;
+
+    /// @notice Loan token address (override for non-USDS vaults)
+    function _loanTokenAddress() internal pure virtual returns (address) {
+        return Constants.USDS;
+    }
+
+    /// @notice Deposit amount scaled to token decimals (override for 6-dec tokens)
+    function _depositAmount() internal pure virtual returns (uint256) {
+        return 1000e18;
+    }
 
     // ============ SETUP ============
 
@@ -45,7 +55,7 @@ abstract contract BaseVaultTest is Test {
         vm.setEnv("ALLOCATOR", vm.toString(deployer));
         vm.setEnv("SENTINEL", vm.toString(address(0)));
 
-        usds = IERC20(Constants.USDS);
+        loanToken = IERC20(_loanTokenAddress());
     }
 
     // ============ ROLE VERIFICATION TESTS ============
@@ -158,12 +168,12 @@ abstract contract BaseVaultTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e18;
+        uint256 depositAmount = _depositAmount();
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
 
         uint256 expectedShares = vault.convertToShares(depositAmount);
         uint256 sharesReceived = vault.deposit(depositAmount, user);
@@ -171,26 +181,26 @@ abstract contract BaseVaultTest is Test {
 
         assertEq(sharesReceived, expectedShares, "Shares received mismatch");
         assertEq(vault.balanceOf(user), sharesReceived, "User vault balance mismatch");
-        assertEq(usds.balanceOf(user), 0, "User should have no USDS left");
+        assertEq(loanToken.balanceOf(user), 0, "User should have no loan token left");
     }
 
     function testVaultWithdraw() public {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e18;
+        uint256 depositAmount = _depositAmount();
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
 
-        uint256 withdrawAmount = 500 * 1e18;
+        uint256 withdrawAmount = depositAmount / 2;
         vault.withdraw(withdrawAmount, user, user);
         vm.stopPrank();
 
-        assertEq(usds.balanceOf(user), withdrawAmount, "User should receive withdrawn amount");
+        assertEq(loanToken.balanceOf(user), withdrawAmount, "User should receive withdrawn amount");
         assertGt(vault.balanceOf(user), 0, "User should have remaining shares");
     }
 
@@ -198,12 +208,12 @@ abstract contract BaseVaultTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e18;
+        uint256 depositAmount = _depositAmount();
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         uint256 redeemShares = shares / 2;
@@ -218,12 +228,12 @@ abstract contract BaseVaultTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 1000 * 1e18;
+        uint256 depositAmount = _depositAmount();
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         uint256 assetsReceived = vault.redeem(shares, user, user);
@@ -240,26 +250,26 @@ abstract contract BaseVaultTest is Test {
         address user2 = makeAddr("user2");
         address user3 = makeAddr("user3");
 
-        uint256 amount1 = 1000 * 1e18;
-        uint256 amount2 = 2000 * 1e18;
-        uint256 amount3 = 500 * 1e18;
+        uint256 amount1 = _depositAmount();
+        uint256 amount2 = _depositAmount() * 2;
+        uint256 amount3 = _depositAmount() / 2;
 
-        deal(Constants.USDS, user1, amount1);
-        deal(Constants.USDS, user2, amount2);
-        deal(Constants.USDS, user3, amount3);
+        deal(_loanTokenAddress(), user1, amount1);
+        deal(_loanTokenAddress(), user2, amount2);
+        deal(_loanTokenAddress(), user3, amount3);
 
         vm.startPrank(user1);
-        usds.approve(address(vault), amount1);
+        loanToken.approve(address(vault), amount1);
         vault.deposit(amount1, user1);
         vm.stopPrank();
 
         vm.startPrank(user2);
-        usds.approve(address(vault), amount2);
+        loanToken.approve(address(vault), amount2);
         vault.deposit(amount2, user2);
         vm.stopPrank();
 
         vm.startPrank(user3);
-        usds.approve(address(vault), amount3);
+        loanToken.approve(address(vault), amount3);
         vault.deposit(amount3, user3);
         vm.stopPrank();
 
@@ -334,8 +344,8 @@ abstract contract BaseVaultTest is Test {
     function testVaultMetadata() public {
         _deployVault();
 
-        assertEq(vault.asset(), Constants.USDS, "Asset should be USDS");
-        assertEq(vault.decimals(), 18, "Vault decimals should be 18");
+        assertEq(vault.asset(), _loanTokenAddress(), "Asset should match loan token");
+        assertGt(vault.decimals(), 0, "Vault decimals should be > 0");
 
         string memory name = vault.name();
         string memory symbol = vault.symbol();
@@ -363,12 +373,12 @@ abstract contract BaseVaultTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 depositAmount = 100 * 1e18;
+        uint256 depositAmount = _depositAmount() / 10;
 
-        deal(Constants.USDS, user, depositAmount);
+        deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        usds.approve(address(vault), depositAmount);
+        loanToken.approve(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
 
         vm.expectRevert();
@@ -380,9 +390,9 @@ abstract contract BaseVaultTest is Test {
         _deployVault();
 
         address user = makeAddr("user");
-        uint256 amount = 100 * 1e18;
+        uint256 amount = _depositAmount() / 10;
 
-        deal(Constants.USDS, user, amount);
+        deal(_loanTokenAddress(), user, amount);
 
         vm.prank(user);
         vm.expectRevert();

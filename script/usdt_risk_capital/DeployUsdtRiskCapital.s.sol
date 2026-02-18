@@ -15,14 +15,13 @@ import {Constants} from "../../src/lib/Constants.sol";
 import {DeployHelpers, IMorphoChainlinkOracleV2Factory, IMorphoMarketV1AdapterV2Factory} from "../../src/lib/DeployHelpers.sol";
 
 /**
- * @title DeployUSDSVaultV2
- * @notice Deploys Vault V2 for USDS and connects it to the stUSDS/USDS Morpho Market
- * @dev This is a single-market vault with liquidity adapter (deposits auto-allocated)
+ * @title DeployUsdtRiskCapital
+ * @notice Deploys USDT Risk Capital Vault V2 and connects it to the stUSDS/USDT Morpho Market
+ * @dev Single-market vault with liquidity adapter. Oracle uses stUSDS ERC4626 + USDS/USD and USDT/USD Chainlink feeds.
  */
-contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
-    // Params specific to this deployment
-    uint256 constant INITIAL_DEAD_COLLATERAL = 21e17; // 2.1 stUSDS
-    uint256 constant DEAD_BORROW_AMOUNT = 18e17; // 1.8 USDS for 90% utilization
+contract DeployUsdtRiskCapital is DeployHelpers, StdCheats {
+    uint256 constant INITIAL_DEAD_COLLATERAL = 21e17; // 2.1 stUSDS (18 dec)
+    uint256 constant DEAD_BORROW_AMOUNT = 18e5; // 0.9 USDT for 90% utilization (6 dec)
 
     struct DeploymentResult {
         address oracle;
@@ -40,16 +39,16 @@ contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
         address finalAllocator = vm.envOr("ALLOCATOR", deployer);
         address sentinel = vm.envOr("SENTINEL", address(0));
 
-        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDS Vault V2"));
-        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdsVaultV2"));
+        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDT Risk Capital Vault V2"));
+        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdtRiskCapitalV2"));
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Create Oracle (stUSDS/USDS using ERC4626 redemption rate only)
-        bytes32 oracleSalt = keccak256(abi.encodePacked(block.timestamp, "Oracle"));
+        // Step 1: Create Oracle (stUSDS/USDT using ERC4626 + Chainlink feeds)
+        bytes32 oracleSalt = keccak256(abi.encodePacked(block.timestamp, "OracleUsdtRiskCapital"));
         result.oracle = IMorphoChainlinkOracleV2Factory(Constants.ORACLE_FACTORY).createMorphoChainlinkOracleV2(
-            Constants.ST_USDS, 1e18, address(0), address(0), Constants.DECIMALS_STUSDS,
-            address(0), 1, address(0), address(0), Constants.DECIMALS_USDS,
+            Constants.ST_USDS, 1e18, Constants.CHAINLINK_USDS_USD, address(0), Constants.DECIMALS_STUSDS,
+            address(0), 1, Constants.CHAINLINK_USDT_USD, address(0), Constants.DECIMALS_USDT,
             oracleSalt
         );
         console.log("Oracle deployed at:", result.oracle);
@@ -57,7 +56,7 @@ contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
         // Step 2: Create Market
         IMorpho morpho = IMorpho(Constants.MORPHO_BLUE);
         MarketParams memory params = MarketParams({
-            loanToken: Constants.USDS,
+            loanToken: Constants.USDT,
             collateralToken: Constants.ST_USDS,
             oracle: result.oracle,
             irm: Constants.IRM_ADAPTIVE,
@@ -72,8 +71,8 @@ contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
         }
 
         // Step 3: Deploy Vault V2
-        bytes32 vaultSalt = keccak256(abi.encodePacked(block.timestamp, "VaultV2"));
-        result.vaultV2 = VaultV2Factory(Constants.VAULT_V2_FACTORY).createVaultV2(deployer, Constants.USDS, vaultSalt);
+        bytes32 vaultSalt = keccak256(abi.encodePacked(block.timestamp, "VaultV2UsdtRiskCapital"));
+        result.vaultV2 = VaultV2Factory(Constants.VAULT_V2_FACTORY).createVaultV2(deployer, Constants.USDT, vaultSalt);
         console.log("VaultV2 deployed at:", result.vaultV2);
         VaultV2 vault = VaultV2(result.vaultV2);
 
@@ -104,19 +103,15 @@ contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
     }
 
     function _configureVault(VaultV2 vault, address adapter, MarketParams memory params, address deployer) internal {
-        // Setup roles
         vault.setCurator(deployer);
         console.log("Defined Deployer as Curator");
 
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.setIsAllocator.selector, deployer, true));
 
-        // Abdicate gates and registry
         _abdicateGatesAndRegistry(vault);
 
-        // Set liquidity adapter (deposits auto-allocated)
         vault.setLiquidityAdapterAndData(adapter, abi.encode(params));
 
-        // Add adapter and caps
         _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.addAdapter.selector, adapter));
 
         bytes memory adapterIdData = abi.encode("this", adapter);
@@ -139,13 +134,13 @@ contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
 
     function _setupDeadDeposits(VaultV2 vault, IMorpho morpho, MarketParams memory params, address deployer) internal {
         // A. Deposit into Vault
-        IERC20(Constants.USDS).approve(address(vault), Constants.INITIAL_DEAD_DEPOSIT);
-        vault.deposit(Constants.INITIAL_DEAD_DEPOSIT, address(0xdEaD));
+        IERC20(Constants.USDT).approve(address(vault), Constants.INITIAL_DEAD_DEPOSIT_6DEC);
+        vault.deposit(Constants.INITIAL_DEAD_DEPOSIT_6DEC, address(0xdEaD));
         console.log("Dead deposit to vault executed.");
 
         // B. Supply directly to Morpho Market
-        IERC20(Constants.USDS).approve(Constants.MORPHO_BLUE, Constants.INITIAL_DEAD_DEPOSIT);
-        morpho.supply(params, Constants.INITIAL_DEAD_DEPOSIT, 0, address(0xdEaD), bytes(""));
+        IERC20(Constants.USDT).approve(Constants.MORPHO_BLUE, Constants.INITIAL_DEAD_DEPOSIT_6DEC);
+        morpho.supply(params, Constants.INITIAL_DEAD_DEPOSIT_6DEC, 0, address(0xdEaD), bytes(""));
         console.log("Dead supply to morpho market executed.");
 
         // C. Supply stUSDS collateral
@@ -153,7 +148,7 @@ contract DeployUSDSVaultV2 is DeployHelpers, StdCheats {
         morpho.supplyCollateral(params, INITIAL_DEAD_COLLATERAL, deployer, bytes(""));
         console.log("Dead collateral supply to morpho market executed.");
 
-        // D. Borrow USDS for 90% utilization
+        // D. Borrow for 90% utilization
         morpho.borrow(params, DEAD_BORROW_AMOUNT, 0, deployer, deployer);
         console.log("Dead borrow executed for 90% utilization.");
     }

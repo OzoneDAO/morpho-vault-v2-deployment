@@ -701,7 +701,9 @@ async function main() {
 }
 
 // Run
-main().catch((error) => {
-  log('FATAL ERROR:', error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    log('FATAL ERROR:', error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });

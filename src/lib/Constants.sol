@@ -8,8 +8,10 @@ pragma solidity 0.8.28;
 library Constants {
     // ============ TOKENS ============
 
-    // Loan Token
+    // Loan Tokens
     address internal constant USDS = 0xdC035D45d973E3EC169d2276DDab16f1e407384F;
+    address internal constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address internal constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
 
     // Collateral Tokens
     address internal constant ST_USDS = 0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9;
@@ -35,6 +37,8 @@ library Constants {
     address internal constant CHAINLINK_STETH_USD = 0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8;
     address internal constant CHAINLINK_ETH_USD = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
     address internal constant CHAINLINK_USDS_USD = 0xfF30586cD0F29eD462364C7e81375FC0C71219b1;
+    address internal constant CHAINLINK_USDC_USD = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
+    address internal constant CHAINLINK_USDT_USD = 0x3E7d1eAB13ad0104d2750B8863b489D65364e32D;
 
     // Morpho wstETH/stETH exchange rate adapter (Chainlink-compatible interface)
     address internal constant MORPHO_WSTETH_STETH_ADAPTER = 0x905b7dAbCD3Ce6B792D874e303D336424Cdb1421;
@@ -43,9 +47,12 @@ library Constants {
 
     uint256 internal constant LLTV_STUSDS = 860000000000000000; // 86%
     uint256 internal constant LLTV_VOLATILE = 860000000000000000; // 86%
+    uint256 internal constant LLTV_SAVINGS = 965000000000000000; // 96.5%
 
     // ============ TOKEN DECIMALS ============
 
+    uint256 internal constant DECIMALS_USDC = 6;
+    uint256 internal constant DECIMALS_USDT = 6;
     uint256 internal constant DECIMALS_USDS = 18;
     uint256 internal constant DECIMALS_STUSDS = 18;
     uint256 internal constant DECIMALS_CBBTC = 8;
@@ -55,6 +62,7 @@ library Constants {
     // ============ DEPLOYMENT PARAMS ============
 
     uint256 internal constant INITIAL_DEAD_DEPOSIT = 1e18; // 1 USDS
+    uint256 internal constant INITIAL_DEAD_DEPOSIT_6DEC = 1e6; // 1 USDC or 1 USDT
     uint256 internal constant MAX_RATE = 63419583967; // 200% APR
     uint256 internal constant TIMELOCK_LOW = 3 days;
     uint256 internal constant TIMELOCK_HIGH = 7 days;
