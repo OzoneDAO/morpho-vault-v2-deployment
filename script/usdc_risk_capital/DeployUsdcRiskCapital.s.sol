@@ -21,7 +21,7 @@ import {DeployHelpers, IMorphoChainlinkOracleV2Factory, IMorphoMarketV1AdapterV2
  */
 contract DeployUsdcRiskCapital is DeployHelpers, StdCheats {
     uint256 constant INITIAL_DEAD_COLLATERAL = 21e17; // 2.1 stUSDS (18 dec)
-    uint256 constant DEAD_BORROW_AMOUNT = 18e5; // 0.9 USDC for 90% utilization (6 dec)
+    uint256 constant DEAD_BORROW_AMOUNT = 18e5; // 1.8 USDC for 90% utilization (6 dec)
 
     struct DeploymentResult {
         address oracle;
@@ -39,8 +39,8 @@ contract DeployUsdcRiskCapital is DeployHelpers, StdCheats {
         address finalAllocator = vm.envOr("ALLOCATOR", deployer);
         address sentinel = vm.envOr("SENTINEL", address(0));
 
-        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDC Risk Capital Vault V2"));
-        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdcRiskCapitalV2"));
+        string memory vaultName = vm.envOr("VAULT_NAME", string("sky.money USDC Risk Capital"));
+        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyMoneyUsdcRiskCapital"));
 
         vm.startBroadcast(deployerPrivateKey);
 

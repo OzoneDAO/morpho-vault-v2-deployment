@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {console} from "forge-std/Script.sol";
 import {StdCheats} from "forge-std/StdCheats.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IMorpho, MarketParams} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
@@ -20,8 +21,9 @@ import {DeployHelpers, IMorphoChainlinkOracleV2Factory, IMorphoMarketV1AdapterV2
  * @dev Single-market vault with liquidity adapter. Oracle uses stUSDS ERC4626 + USDS/USD and USDT/USD Chainlink feeds.
  */
 contract DeployUsdtRiskCapital is DeployHelpers, StdCheats {
+    using SafeERC20 for IERC20;
     uint256 constant INITIAL_DEAD_COLLATERAL = 21e17; // 2.1 stUSDS (18 dec)
-    uint256 constant DEAD_BORROW_AMOUNT = 18e5; // 0.9 USDT for 90% utilization (6 dec)
+    uint256 constant DEAD_BORROW_AMOUNT = 18e5; // 1.8 USDT for 90% utilization (6 dec)
 
     struct DeploymentResult {
         address oracle;
@@ -39,8 +41,8 @@ contract DeployUsdtRiskCapital is DeployHelpers, StdCheats {
         address finalAllocator = vm.envOr("ALLOCATOR", deployer);
         address sentinel = vm.envOr("SENTINEL", address(0));
 
-        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDT Risk Capital Vault V2"));
-        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdtRiskCapitalV2"));
+        string memory vaultName = vm.envOr("VAULT_NAME", string("sky.money USDT Risk Capital"));
+        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyMoneyUsdtRiskCapital"));
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -134,17 +136,17 @@ contract DeployUsdtRiskCapital is DeployHelpers, StdCheats {
 
     function _setupDeadDeposits(VaultV2 vault, IMorpho morpho, MarketParams memory params, address deployer) internal {
         // A. Deposit into Vault
-        IERC20(Constants.USDT).approve(address(vault), Constants.INITIAL_DEAD_DEPOSIT_6DEC);
+        IERC20(Constants.USDT).forceApprove(address(vault), Constants.INITIAL_DEAD_DEPOSIT_6DEC);
         vault.deposit(Constants.INITIAL_DEAD_DEPOSIT_6DEC, address(0xdEaD));
         console.log("Dead deposit to vault executed.");
 
         // B. Supply directly to Morpho Market
-        IERC20(Constants.USDT).approve(Constants.MORPHO_BLUE, Constants.INITIAL_DEAD_DEPOSIT_6DEC);
+        IERC20(Constants.USDT).forceApprove(Constants.MORPHO_BLUE, Constants.INITIAL_DEAD_DEPOSIT_6DEC);
         morpho.supply(params, Constants.INITIAL_DEAD_DEPOSIT_6DEC, 0, address(0xdEaD), bytes(""));
         console.log("Dead supply to morpho market executed.");
 
         // C. Supply stUSDS collateral
-        IERC20(Constants.ST_USDS).approve(Constants.MORPHO_BLUE, INITIAL_DEAD_COLLATERAL);
+        IERC20(Constants.ST_USDS).forceApprove(Constants.MORPHO_BLUE, INITIAL_DEAD_COLLATERAL);
         morpho.supplyCollateral(params, INITIAL_DEAD_COLLATERAL, deployer, bytes(""));
         console.log("Dead collateral supply to morpho market executed.");
 

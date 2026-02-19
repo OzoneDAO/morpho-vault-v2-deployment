@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {Constants} from "../../src/lib/Constants.sol";
 
@@ -12,6 +13,7 @@ import {Constants} from "../../src/lib/Constants.sol";
  * @dev Inherit this and implement _deployVault() to use common tests
  */
 abstract contract BaseVaultTest is Test {
+    using SafeERC20 for IERC20;
     // State (set by child contracts)
     IVaultV2 public vault;
     IERC20 public loanToken;
@@ -173,7 +175,7 @@ abstract contract BaseVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
 
         uint256 expectedShares = vault.convertToShares(depositAmount);
         uint256 sharesReceived = vault.deposit(depositAmount, user);
@@ -193,7 +195,7 @@ abstract contract BaseVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
 
         uint256 withdrawAmount = depositAmount / 2;
@@ -213,7 +215,7 @@ abstract contract BaseVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         uint256 redeemShares = shares / 2;
@@ -233,7 +235,7 @@ abstract contract BaseVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         uint256 assetsReceived = vault.redeem(shares, user, user);
@@ -259,17 +261,17 @@ abstract contract BaseVaultTest is Test {
         deal(_loanTokenAddress(), user3, amount3);
 
         vm.startPrank(user1);
-        loanToken.approve(address(vault), amount1);
+        loanToken.forceApprove(address(vault), amount1);
         vault.deposit(amount1, user1);
         vm.stopPrank();
 
         vm.startPrank(user2);
-        loanToken.approve(address(vault), amount2);
+        loanToken.forceApprove(address(vault), amount2);
         vault.deposit(amount2, user2);
         vm.stopPrank();
 
         vm.startPrank(user3);
-        loanToken.approve(address(vault), amount3);
+        loanToken.forceApprove(address(vault), amount3);
         vault.deposit(amount3, user3);
         vm.stopPrank();
 
@@ -378,7 +380,7 @@ abstract contract BaseVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
         vault.deposit(depositAmount, user);
 
         vm.expectRevert();

@@ -3,10 +3,15 @@ pragma solidity 0.8.28;
 
 import {console} from "forge-std/Test.sol";
 import {DeployUsdsRiskCapital} from "../../script/usds_risk_capital/DeployUsdsRiskCapital.s.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {IMorpho, MarketParams, Id, Market} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 
+import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
+
 import {Constants} from "../../src/lib/Constants.sol";
+import {IMorphoChainlinkOracleV2} from "../../src/lib/DeployHelpers.sol";
 import {BaseVaultTest} from "../base/BaseVaultTest.sol";
 
 /**
@@ -15,6 +20,7 @@ import {BaseVaultTest} from "../base/BaseVaultTest.sol";
  * @dev Extends BaseVaultTest for common tests, adds USDS-specific tests
  */
 contract DeployUsdsRiskCapitalScriptTest is BaseVaultTest {
+    using SafeERC20 for IERC20;
     DeployUsdsRiskCapital public deployScript;
     DeployUsdsRiskCapital.DeploymentResult public result;
 
@@ -137,6 +143,64 @@ contract DeployUsdsRiskCapitalScriptTest is BaseVaultTest {
         assertTrue(vault.isAllocator(newAllocator), "New allocator should be set");
     }
 
+    function testOracleReturnsValidPrice() public {
+        _deployVault();
+
+        bytes memory liquidityData = vault.liquidityData();
+        MarketParams memory params = abi.decode(liquidityData, (MarketParams));
+
+        IMorphoChainlinkOracleV2 oracle = IMorphoChainlinkOracleV2(params.oracle);
+        uint256 price = oracle.price();
+
+        // Scale = 10^(36 + 18 - 18) = 10^36. stUSDS ~$1.05 USDS
+        uint256 expectedScale = 1e36;
+        assertGt(price, expectedScale * 100 / 100, "Price should be >= 1.00 * scale");
+        assertLt(price, expectedScale * 120 / 100, "Price should be < 1.20 * scale");
+        console.log("Oracle price:", price);
+    }
+
+    function testOracleFeedConfiguration() public {
+        _deployVault();
+
+        bytes memory liquidityData = vault.liquidityData();
+        MarketParams memory params = abi.decode(liquidityData, (MarketParams));
+
+        IMorphoChainlinkOracleV2 oracle = IMorphoChainlinkOracleV2(params.oracle);
+
+        // USDS vault uses pure ERC4626 oracle (no Chainlink feeds)
+        assertEq(oracle.BASE_VAULT(), Constants.ST_USDS, "Base vault should be stUSDS");
+        assertEq(oracle.BASE_VAULT_CONVERSION_SAMPLE(), 1e18, "Base vault conversion sample should be 1e18");
+        assertEq(oracle.BASE_FEED_1(), address(0), "Base feed 1 should be zero (pure ERC4626)");
+        assertEq(oracle.BASE_FEED_2(), address(0), "Base feed 2 should be zero");
+        assertEq(oracle.QUOTE_VAULT(), address(0), "Quote vault should be zero");
+        assertEq(oracle.QUOTE_FEED_1(), address(0), "Quote feed 1 should be zero");
+        assertEq(oracle.QUOTE_FEED_2(), address(0), "Quote feed 2 should be zero");
+    }
+
+    function testMarketParams() public {
+        _deployVault();
+
+        bytes memory liquidityData = vault.liquidityData();
+        MarketParams memory params = abi.decode(liquidityData, (MarketParams));
+
+        assertEq(params.loanToken, Constants.USDS, "Loan token should be USDS");
+        assertEq(params.collateralToken, Constants.ST_USDS, "Collateral should be stUSDS");
+        assertEq(params.irm, Constants.IRM_ADAPTIVE, "IRM should be adaptive");
+        assertEq(params.lltv, Constants.LLTV_STUSDS, "LLTV should be 86%");
+        assertTrue(params.oracle != address(0), "Oracle should not be zero");
+    }
+
+    function testAdapterTimelocks() public {
+        _deployVault();
+
+        IMorphoMarketV1AdapterV2 adapter = IMorphoMarketV1AdapterV2(result.adapter);
+
+        assertEq(adapter.timelock(IMorphoMarketV1AdapterV2.burnShares.selector), Constants.TIMELOCK_LOW, "burnShares timelock should be 3 days");
+        assertEq(adapter.timelock(IMorphoMarketV1AdapterV2.setSkimRecipient.selector), Constants.TIMELOCK_LOW, "setSkimRecipient timelock should be 3 days");
+        assertEq(adapter.timelock(IMorphoMarketV1AdapterV2.abdicate.selector), Constants.TIMELOCK_HIGH, "abdicate timelock should be 7 days");
+        assertEq(adapter.timelock(IMorphoMarketV1AdapterV2.increaseTimelock.selector), Constants.TIMELOCK_HIGH, "increaseTimelock timelock should be 7 days");
+    }
+
     // ============ INTEGRATION TEST ============
 
     function testVaultOperations() public {
@@ -151,7 +215,7 @@ contract DeployUsdsRiskCapitalScriptTest is BaseVaultTest {
         deal(Constants.USDS, user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
         uint256 expectedShares = vault.convertToShares(depositAmount);
         uint256 sharesReceived = vault.deposit(depositAmount, user);
 

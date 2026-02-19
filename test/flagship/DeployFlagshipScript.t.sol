@@ -271,22 +271,15 @@ contract DeployFlagshipScriptTest is BaseVaultTest {
         assertEq(adapter.realAssets(), 0, "Adapter should have 0 assets (no allocation yet)");
     }
 
-    // ============ ALLOCATOR TESTS ============
+    // ============ CAPS TESTS ============
 
-    function testAllocatorIsProperlySet() public {
+    function testCapsConfiguredForAllMarkets() public {
         _deployVault();
-
-        // Verify deployer is allocator
-        assertTrue(vault.isAllocator(deployer), "Deployer should be allocator");
 
         // Verify caps are set for the adapter
         bytes memory adapterIdData = abi.encode("this", adapterAddress);
         bytes32 adapterCapId = keccak256(adapterIdData);
         assertGt(vault.relativeCap(adapterCapId), 0, "Adapter relative cap should be set");
-    }
-
-    function testCapsConfiguredForAllMarkets() public {
-        _deployVault();
 
         // Verify caps are set for each collateral token
         address[] memory collaterals = new address[](4);

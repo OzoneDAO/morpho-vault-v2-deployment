@@ -40,8 +40,8 @@ contract DeployUsdsRiskCapital is DeployHelpers, StdCheats {
         address finalAllocator = vm.envOr("ALLOCATOR", deployer);
         address sentinel = vm.envOr("SENTINEL", address(0));
 
-        string memory vaultName = vm.envOr("VAULT_NAME", string("Sky USDS Risk Capital Vault V2"));
-        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyUsdsRiskCapitalV2"));
+        string memory vaultName = vm.envOr("VAULT_NAME", string("sky.money USDS Risk Capital"));
+        string memory vaultSymbol = vm.envOr("VAULT_SYMBOL", string("skyMoneyUsdsRiskCapital"));
 
         vm.startBroadcast(deployerPrivateKey);
 

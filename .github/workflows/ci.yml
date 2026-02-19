@@ -137,13 +137,12 @@ jobs:
       ALLOCATOR: "0xE4d5F54CE1830d5eCC49751021F306CFE7a52649"
       VAULT_NAME: "sky.money USDS Flagship"
       VAULT_SYMBOL: "skyMoneyUsdsFlagship"
-      # Uncomment after each script is deployed on mainnet
-      # VAULT_ADDRESS: "0x..."
-      # ADAPTER_ADDRESS: "0x..."
-      # ORACLE_CBBTC: "0x..."
-      # ORACLE_WSTETH: "0x..."
-      # ORACLE_WETH: "0x..."
-      # FLAGSHIP_BLOCK_NUMBER: 0
+      VAULT_ADDRESS: "0xE15fcC81118895b67b6647BBd393182dF44E11E0"
+      ADAPTER_ADDRESS: "0xf94BE39e8863183Ff41194b5923627C90A34039D"
+      ORACLE_CBBTC: "0xA5AEb90F9f122989fE69Ae6224Ed923A0caF33B4"
+      ORACLE_WSTETH: "0xc9A9440d1545047b2Ce3624DB425410cF2EAE292"
+      ORACLE_WETH: "0x76b2242ea5BE1FCBBF4206EA09601EA5aB22Af4d"
+      FLAGSHIP_BLOCK_NUMBER: 24441446
 
     steps:
       - uses: actions/checkout@v4
@@ -157,7 +156,6 @@ jobs:
         run: |
           forge test --match-contract DeployFlagshipScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
-      # Uncomment after Flagship vault is deployed on mainnet
-      # - name: Run Flagship deployed tests
-      #   run: |
-      #     forge test --match-path "test/flagship/deployed/*" --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.FLAGSHIP_BLOCK_NUMBER }} -vvvv
+      - name: Run Flagship deployed tests
+        run: |
+          forge test --match-path "test/flagship/deployed/*" --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.FLAGSHIP_BLOCK_NUMBER }} -vvvv

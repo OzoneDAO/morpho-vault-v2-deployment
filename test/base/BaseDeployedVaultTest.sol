@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {Constants} from "../../src/lib/Constants.sol";
 
@@ -12,6 +13,7 @@ import {Constants} from "../../src/lib/Constants.sol";
  * @dev Set VAULT_ADDRESS env var to specify the vault to test
  */
 abstract contract BaseDeployedVaultTest is Test {
+    using SafeERC20 for IERC20;
     // State
     IVaultV2 public vault;
     IERC20 public loanToken;
@@ -228,7 +230,7 @@ abstract contract BaseDeployedVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
 
         uint256 sharesBefore = vault.balanceOf(user);
         uint256 expectedShares = vault.previewDeposit(depositAmount);
@@ -254,7 +256,7 @@ abstract contract BaseDeployedVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
         uint256 shares = vault.deposit(depositAmount, user);
 
         console.log("=== User Withdraw Test ===");
@@ -284,7 +286,7 @@ abstract contract BaseDeployedVaultTest is Test {
         deal(_loanTokenAddress(), user, depositAmount);
 
         vm.startPrank(user);
-        loanToken.approve(address(vault), depositAmount);
+        loanToken.forceApprove(address(vault), depositAmount);
 
         console.log("=== Full Cycle Test ===");
         console.log("Initial deposit:", depositAmount);

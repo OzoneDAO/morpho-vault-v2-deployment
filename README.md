@@ -4,7 +4,7 @@ Foundry scripts, tests, and allocator bot for deploying **Morpho Vault V2** vaul
 
 ## Overview
 
-This repository deploys single-market and multi-market USDS-based Morpho vaults:
+This repository deploys single-market and multi-market stUSDS-collateralized Morpho vaults:
 
 | Vault | Loan Token | Strategy | Collateral | LLTV |
 |-------|-----------|----------|------------|------|
@@ -20,50 +20,50 @@ This repository deploys single-market and multi-market USDS-based Morpho vaults:
 .
 ├── script/
 │   ├── usds_risk_capital/
-│   │   └── DeployUsdsRiskCapital.s.sol      # USDS Risk Capital vault (1 script)
+│   │   └── DeployUsdsRiskCapital.s.sol
 │   ├── usdc_risk_capital/
-│   │   └── DeployUsdcRiskCapital.s.sol      # USDC Risk Capital vault (1 script)
+│   │   └── DeployUsdcRiskCapital.s.sol
 │   ├── usdt_risk_capital/
-│   │   └── DeployUsdtRiskCapital.s.sol      # USDT Risk Capital vault (1 script)
+│   │   └── DeployUsdtRiskCapital.s.sol
 │   ├── usdt_savings/
-│   │   └── DeployUsdtSavings.s.sol          # USDT Savings vault (1 script)
+│   │   └── DeployUsdtSavings.s.sol
 │   └── flagship/
-│       ├── 1_CreateVault.s.sol              # Deploy vault + adapter
-│       ├── 2_CreateCbBtcMarket.s.sol        # Create cbBTC/USDS market
-│       ├── 3_CreateWstEthMarket.s.sol       # Create wstETH/USDS market
-│       ├── 4_CreateWethMarket.s.sol         # Create WETH/USDS market
-│       └── 5_ConfigureVault.s.sol           # Configure caps, timelocks, ownership
+│       ├── 1_CreateVault.s.sol
+│       ├── 2_CreateCbBtcMarket.s.sol
+│       ├── 3_CreateWstEthMarket.s.sol
+│       ├── 4_CreateWethMarket.s.sol
+│       └── 5_ConfigureVault.s.sol
 ├── src/lib/
-│   ├── Constants.sol                         # Mainnet addresses & parameters
-│   └── DeployHelpers.sol                     # Shared deployment utilities
+│   ├── Constants.sol
+│   └── DeployHelpers.sol
 ├── test/
+│   ├── base/
+│   │   ├── BaseVaultTest.sol
+│   │   └── BaseDeployedVaultTest.sol
 │   ├── usds_risk_capital/
-│   │   ├── DeployUsdsRiskCapitalScript.t.sol    # Script tests
-│   │   └── DeployedUsdsRiskCapitalVault.t.sol   # Deployed tests
+│   │   ├── DeployUsdsRiskCapitalScript.t.sol
+│   │   └── DeployedUsdsRiskCapitalVault.t.sol
 │   ├── usdc_risk_capital/
-│   │   ├── DeployUsdcRiskCapitalScript.t.sol    # Script tests
-│   │   └── DeployedUsdcRiskCapitalVault.t.sol   # Deployed tests
+│   │   ├── DeployUsdcRiskCapitalScript.t.sol
+│   │   └── DeployedUsdcRiskCapitalVault.t.sol
 │   ├── usdt_risk_capital/
-│   │   ├── DeployUsdtRiskCapitalScript.t.sol    # Script tests
-│   │   └── DeployedUsdtRiskCapitalVault.t.sol   # Deployed tests
+│   │   ├── DeployUsdtRiskCapitalScript.t.sol
+│   │   └── DeployedUsdtRiskCapitalVault.t.sol
 │   ├── usdt_savings/
-│   │   ├── DeployUsdtSavingsScript.t.sol        # Script tests
-│   │   └── DeployedUsdtSavingsVault.t.sol       # Deployed tests
-│   ├── flagship/
-│   │   ├── DeployFlagshipScript.t.sol           # Script tests
-│   │   └── deployed/                            # Deployed tests (1 per script)
-│   │       ├── 1_CreateVault.t.sol
-│   │       ├── 2_CreateCbBtcMarket.t.sol
-│   │       ├── 3_CreateWstEthMarket.t.sol
-│   │       ├── 4_CreateWethMarket.t.sol
-│   │       └── 5_ConfigureVault.t.sol
-│   └── base/
-│       ├── BaseVaultTest.sol                    # Shared script test suite
-│       └── BaseDeployedVaultTest.sol            # Shared deployed test suite
+│   │   ├── DeployUsdtSavingsScript.t.sol
+│   │   └── DeployedUsdtSavingsVault.t.sol
+│   └── flagship/
+│       ├── DeployFlagshipScript.t.sol
+│       └── deployed/
+│           ├── 1_CreateVault.t.sol
+│           ├── 2_CreateCbBtcMarket.t.sol
+│           ├── 3_CreateWstEthMarket.t.sol
+│           ├── 4_CreateWethMarket.t.sol
+│           └── 5_ConfigureVault.t.sol
 ├── bot/
-│   ├── src/allocator.ts                      # Allocator bot (executes via Safe multisig)
-│   └── README.md                             # Bot documentation
-└── DEPLOYMENT_SEQUENCE.md                    # Full deployment order (scripts + Safe + bot)
+│   ├── src/allocator.ts
+│   └── README.md
+└── DEPLOYMENT_SEQUENCE.md
 ```
 
 ## Vaults
@@ -84,14 +84,13 @@ All four single-market vaults share the same architecture:
 
 ### Flagship Vault (Multi-Market)
 
-- **Purpose**: Higher yield through diversified lending across multiple collateral types
 - **Strategy**: 80% idle (earns SSR via Merkl), 20% allocated to markets
-- **No Liquidity Adapter**: Deposits stay idle; allocator bot manages allocation
+- **Allocation**: Manual via allocator bot (no liquidity adapter)
 - **Markets** (all 86% LLTV):
-  - stUSDS/USDS (existing market from USDS Risk Capital vault)
-  - cbBTC/USDS (new market)
-  - wstETH/USDS (new market)
-  - WETH/USDS (new market)
+  - stUSDS/USDS (existing market)
+  - cbBTC/USDS
+  - wstETH/USDS
+  - WETH/USDS
 - **Caps**: 20% max to adapter, 5% max per market
 - **Deployment**: 5 sequential scripts
 
@@ -116,39 +115,40 @@ sleep 5
 
 # Run all script tests
 forge test --match-path "test/*/Deploy*Script.t.sol" --fork-url http://localhost:8545 -v
+forge test --match-path "test/flagship/DeployFlagshipScript*" --fork-url http://localhost:8545 -v
 
 # Or run individually
-forge test --match-path "test/usds_risk_capital/*Script*" --fork-url http://localhost:8545 -v
-forge test --match-path "test/usdc_risk_capital/*Script*" --fork-url http://localhost:8545 -v
-forge test --match-path "test/usdt_risk_capital/*Script*" --fork-url http://localhost:8545 -v
-forge test --match-path "test/usdt_savings/*Script*" --fork-url http://localhost:8545 -v
-forge test --match-path "test/flagship/DeployFlagshipScript*" --fork-url http://localhost:8545 -v
+forge test --match-contract DeployUsdsRiskCapitalScript --fork-url http://localhost:8545 -v
+forge test --match-contract DeployUsdcRiskCapitalScript --fork-url http://localhost:8545 -v
+forge test --match-contract DeployUsdtRiskCapitalScript --fork-url http://localhost:8545 -v
+forge test --match-contract DeployUsdtSavingsScript --fork-url http://localhost:8545 -v
+forge test --match-contract DeployFlagshipScript --fork-url http://localhost:8545 -v
 
 pkill anvil
 ```
 
-### Deployed Tests (post-deployment, incremental)
+### Deployed Tests (post-deployment)
 
-After each mainnet deployment script, run the corresponding test to verify on-chain state:
+After each mainnet deployment, run the corresponding test to verify on-chain state. These run directly against the RPC (no Anvil needed):
 
 ```bash
 source .env  # Must contain VAULT_ADDRESS and other deployment outputs
 
-# Single-market vaults (after deployment)
-forge test --match-contract DeployedUsdsRiskCapitalVault --fork-url $RPC_URL -v
-forge test --match-contract DeployedUsdcRiskCapitalVault --fork-url $RPC_URL -v
-forge test --match-contract DeployedUsdtRiskCapitalVault --fork-url $RPC_URL -v
-forge test --match-contract DeployedUsdtSavingsVault --fork-url $RPC_URL -v
+# Single-market vaults
+forge test --match-contract DeployedUsdsRiskCapitalVault --fork-url $RPC_URL --fork-block-number $USDS_BLOCK_NUMBER -v
+forge test --match-contract DeployedUsdcRiskCapitalVault --fork-url $RPC_URL --fork-block-number $USDC_BLOCK_NUMBER -v
+forge test --match-contract DeployedUsdtRiskCapitalVault --fork-url $RPC_URL --fork-block-number $USDT_RC_BLOCK_NUMBER -v
+forge test --match-contract DeployedUsdtSavingsVault --fork-url $RPC_URL --fork-block-number $USDT_SAV_BLOCK_NUMBER -v
 
 # Flagship (incremental after each script)
-forge test --match-path "test/flagship/deployed/1_*" --fork-url $RPC_URL -v   # after script 1
-forge test --match-path "test/flagship/deployed/2_*" --fork-url $RPC_URL -v   # after script 2
-forge test --match-path "test/flagship/deployed/3_*" --fork-url $RPC_URL -v   # after script 3
-forge test --match-path "test/flagship/deployed/4_*" --fork-url $RPC_URL -v   # after script 4
-forge test --match-path "test/flagship/deployed/5_*" --fork-url $RPC_URL -v   # after script 5
+forge test --match-path "test/flagship/deployed/1_*" --fork-url $RPC_URL --fork-block-number $FLAGSHIP_BLOCK_NUMBER -v
+forge test --match-path "test/flagship/deployed/2_*" --fork-url $RPC_URL --fork-block-number $FLAGSHIP_BLOCK_NUMBER -v
+forge test --match-path "test/flagship/deployed/3_*" --fork-url $RPC_URL --fork-block-number $FLAGSHIP_BLOCK_NUMBER -v
+forge test --match-path "test/flagship/deployed/4_*" --fork-url $RPC_URL --fork-block-number $FLAGSHIP_BLOCK_NUMBER -v
+forge test --match-path "test/flagship/deployed/5_*" --fork-url $RPC_URL --fork-block-number $FLAGSHIP_BLOCK_NUMBER -v
 
-# Or run all Flagship deployed tests at once
-forge test --match-path "test/flagship/deployed/*" --fork-url $RPC_URL -v
+# Or all Flagship deployed tests at once
+forge test --match-path "test/flagship/deployed/*" --fork-url $RPC_URL --fork-block-number $FLAGSHIP_BLOCK_NUMBER -v
 ```
 
 ## Deployment
@@ -199,53 +199,37 @@ forge script script/usdt_savings/DeployUsdtSavings.s.sol \
 
 ### Deploy Flagship Vault (5 Scripts)
 
-The Flagship vault deployment is split into 5 sequential scripts for better control and verification:
-
 ```bash
 source .env
 
 # Step 1: Create Vault and Adapter
 forge script script/flagship/1_CreateVault.s.sol \
   --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
-
-# Set env vars from output
-export VAULT_ADDRESS=0x...
-export ADAPTER_ADDRESS=0x...
+# Set env vars from output: VAULT_ADDRESS, ADAPTER_ADDRESS
 
 # Step 2: Create cbBTC/USDS Market
 forge script script/flagship/2_CreateCbBtcMarket.s.sol \
   --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
-
-export ORACLE_CBBTC=0x...
+# Set: ORACLE_CBBTC
 
 # Step 3: Create wstETH/USDS Market
 forge script script/flagship/3_CreateWstEthMarket.s.sol \
   --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
-
-export ORACLE_WSTETH=0x...
+# Set: ORACLE_WSTETH
 
 # Step 4: Create WETH/USDS Market
 forge script script/flagship/4_CreateWethMarket.s.sol \
   --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
-
-export ORACLE_WETH=0x...
+# Set: ORACLE_WETH
 
 # Step 5: Configure Vault (caps, timelocks, ownership)
 forge script script/flagship/5_ConfigureVault.s.sol \
   --rpc-url $RPC_URL --broadcast --slow --gas-estimate-multiplier 200
 ```
 
-**Note**: The Flagship vault reuses the existing stUSDS/USDS market from the USDS Risk Capital vault deployment.
-
 ## Allocator Bot
 
 The Flagship vault requires an allocator bot to maintain the 80% idle / 20% allocated strategy. The bot executes transactions through a **Safe 1/3 multisig** (threshold 1, 3 owners). The Safe address is set as the vault's allocator, and the bot autonomously signs and executes via `execTransaction`.
-
-### Setup
-
-1. Create a Safe multisig at [app.safe.global](https://app.safe.global) with threshold=1 and 3 owners (one being the bot's EOA)
-2. Use the Safe address as `ALLOCATOR` during vault deployment (Script 5)
-3. Configure the bot:
 
 ```bash
 cd bot
@@ -253,11 +237,8 @@ npm install
 cp .env.example .env
 # Fill in SAFE_ADDRESS, PRIVATE_KEY (bot signer), and deployment addresses
 
-# Test with dry run
-DRY_RUN=true npm run dev
-
-# Run for real
-npm run dev
+DRY_RUN=true npm run dev  # Test with dry run
+npm run dev                # Run for real
 ```
 
 See [bot/README.md](bot/README.md) and [DEPLOYMENT_SEQUENCE.md](DEPLOYMENT_SEQUENCE.md) for details.
@@ -268,7 +249,7 @@ See [bot/README.md](bot/README.md) and [DEPLOYMENT_SEQUENCE.md](DEPLOYMENT_SEQUE
 |------|--------|-------------|
 | **Owner** | Current Owner | Set curator, sentinels, transfer ownership |
 | **Curator** | Owner | Timelocked: adapters, caps, allocators |
-| **Allocator** | Curator | Allocate/deallocate capital, set liquidity adapter (Safe 1/3 multisig for Flagship) |
+| **Allocator** | Curator | Allocate/deallocate capital, set liquidity adapter |
 | **Sentinel** | Owner | Revoke pending timelocked actions |
 
 ## Timelock Requirements
@@ -278,7 +259,7 @@ Per Morpho listing rules:
 | Duration | Actions |
 |----------|---------|
 | **7 days** | `increaseTimelock`, `removeAdapter`, `abdicate` |
-| **3 days** | `addAdapter`, `increaseAbsoluteCap`, `increaseRelativeCap`, `setForceDeallocatePenalty` |
+| **3 days** | `addAdapter`, `increaseAbsoluteCap`, `increaseRelativeCap`, `setForceDeallocatePenalty`, `burnShares`, `setSkimRecipient` |
 
 ## Key Addresses (Mainnet)
 
@@ -296,6 +277,9 @@ cbBTC:   0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf
 USDS/USD:  0xfF30586cD0F29eD462364C7e81375FC0C71219b1
 USDC/USD:  0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6
 USDT/USD:  0x3E7d1eAB13ad0104d2750B8863b489D65364e32D
+CBBTC/USD: 0x2665701293fCbEB223D11A08D826563EDcCE423A
+STETH/USD: 0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8
+ETH/USD:   0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
 
 # Morpho Infrastructure
 MORPHO_BLUE:      0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb
@@ -307,20 +291,23 @@ ADAPTER_REGISTRY: 0x3696c5eAe4a7Ffd04Ea163564571E9CD8Ed9364e
 
 | Vault | Gas (~ETH) | Tokens Needed |
 |-------|------------|---------------|
-| USDS Risk Capital | ~0.0015 ETH | 2 USDS, 2.1 stUSDS |
-| USDC Risk Capital | ~0.0015 ETH | 2 USDC, 2.1 stUSDS |
-| USDT Risk Capital | ~0.0015 ETH | 2 USDT, 2.1 stUSDS |
-| USDT Savings | ~0.0015 ETH | 2 USDT, 2.1 stUSDS |
-| Flagship Vault | ~0.003 ETH | ~4 USDS, 0.001 wstETH, 0.001 WETH, 0.0001 cbBTC |
+| USDS Risk Capital | ~0.0015 | 2 USDS, 2.1 stUSDS |
+| USDC Risk Capital | ~0.0015 | 2 USDC, 2.1 stUSDS |
+| USDT Risk Capital | ~0.0015 | 2 USDT, 2.1 stUSDS |
+| USDT Savings | ~0.0015 | 2 USDT, 2.1 stUSDS |
+| Flagship | ~0.003 | ~4 USDS, 0.001 wstETH, 0.001 WETH, 0.0001 cbBTC |
 
 ## Troubleshooting
 
 ### "Out of gas" on Tenderly
 USDS has complex transfer logic. Use `--gas-estimate-multiplier 200`.
 
+### USDT approve reverts
+USDT's `approve()` doesn't return a bool (non-standard ERC20). All USDT scripts use `SafeERC20.forceApprove()`.
+
 ### Test Failures
-- Ensure Anvil is running before tests
-- Run tests sequentially with `-j 1` if needed
+- Script tests require Anvil running; deployed tests run directly against RPC
+- Run tests sequentially with `-j 1` if env var race conditions occur
 - Create fresh fork for clean state
 
 ### Market Already Exists
