@@ -40,6 +40,9 @@ contract DeployUsdtRiskCapitalScriptTest is BaseVaultTest {
     function _deployVault() internal override {
         deal(Constants.USDT, deployer, 10e6);
         deal(Constants.ST_USDS, deployer, 3e18);
+        // DEBUG: verify deal worked
+        console.log("USDT balance after deal:", IERC20(Constants.USDT).balanceOf(deployer));
+        console.log("stUSDS balance after deal:", IERC20(Constants.ST_USDS).balanceOf(deployer));
         result = deployScript.run();
         vault = IVaultV2(result.vaultV2);
     }
