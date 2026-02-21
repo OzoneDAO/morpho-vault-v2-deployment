@@ -23,13 +23,20 @@ interface IERC4626Minimal {
  *
  * Required env vars:
  *   VAULT_ADDRESS - Deployed vault address
- *   OWNER, CURATOR, ALLOCATOR - Expected role addresses
- *   VAULT_NAME, VAULT_SYMBOL - Expected vault metadata
- *
- * Optional env vars:
- *   SENTINEL - Expected sentinel address
  */
 contract DeployedConfigureVaultTest is BaseDeployedVaultTest {
+    function _expectedAllocator() internal pure override returns (address) {
+        return Constants.ALLOCATOR_FLAGSHIP;
+    }
+
+    function _expectedVaultName() internal pure override returns (string memory) {
+        return "sky.money USDS Flagship";
+    }
+
+    function _expectedVaultSymbol() internal pure override returns (string memory) {
+        return "skyMoneyUsdsFlagship";
+    }
+
     // Existing stUSDS oracle
     address constant EXISTING_STUSDS_ORACLE = 0x0A976226d113B67Bd42D672Ac9f83f92B44b454C;
 

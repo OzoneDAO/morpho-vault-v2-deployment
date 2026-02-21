@@ -27,6 +27,14 @@ contract DeployedUsdcRiskCapitalVaultTest is BaseDeployedVaultTest {
         return 100e6;
     }
 
+    function _expectedVaultName() internal pure override returns (string memory) {
+        return "sky.money USDC Risk Capital";
+    }
+
+    function _expectedVaultSymbol() internal pure override returns (string memory) {
+        return "skyMoneyUsdcRiskCapital";
+    }
+
     // ============ USDC RISK CAPITAL SPECIFIC TESTS ============
 
     function testLiquidityAdapterSet() public view {

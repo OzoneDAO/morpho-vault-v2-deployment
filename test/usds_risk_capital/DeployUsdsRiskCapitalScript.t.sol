@@ -36,20 +36,6 @@ contract DeployUsdsRiskCapitalScriptTest is BaseVaultTest {
         vault = IVaultV2(result.vaultV2);
     }
 
-    function _deployVaultWithRoles(
-        address owner,
-        address curator,
-        address allocator,
-        address sentinel
-    ) internal override {
-        if (owner != address(0)) vm.setEnv("OWNER", vm.toString(owner));
-        if (curator != address(0)) vm.setEnv("CURATOR", vm.toString(curator));
-        if (allocator != address(0)) vm.setEnv("ALLOCATOR", vm.toString(allocator));
-        if (sentinel != address(0)) vm.setEnv("SENTINEL", vm.toString(sentinel));
-
-        _deployVault();
-    }
-
     // ============ USDS RISK CAPITAL SPECIFIC TESTS ============
 
     function testRunScript() public {
@@ -98,21 +84,11 @@ contract DeployUsdsRiskCapitalScriptTest is BaseVaultTest {
         assertEq(totalAssets, Constants.INITIAL_DEAD_DEPOSIT, "Total assets should equal dead deposit");
     }
 
-    function testSentinelNotSetByDefault() public {
+    function testRandomAddressIsNotSentinel() public {
         _deployVault();
 
         address randomAddr = makeAddr("random");
         assertFalse(vault.isSentinel(randomAddr), "Random address should not be sentinel");
-    }
-
-    function testPartialRoleTransfer_OnlyOwner() public {
-        address customOwner = makeAddr("customOwner");
-
-        vm.setEnv("OWNER", vm.toString(customOwner));
-        _deployVault();
-
-        assertEq(vault.owner(), customOwner, "Owner should be custom");
-        assertTrue(vault.curator() != address(0), "Curator should be set");
     }
 
     function testOwnerCanTransferAllRolesAfterDeployment() public {

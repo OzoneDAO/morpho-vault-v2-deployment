@@ -47,20 +47,6 @@ contract DeployUsdtRiskCapitalScriptTest is BaseVaultTest {
         vault = IVaultV2(result.vaultV2);
     }
 
-    function _deployVaultWithRoles(
-        address owner,
-        address curator,
-        address allocator,
-        address sentinel
-    ) internal override {
-        if (owner != address(0)) vm.setEnv("OWNER", vm.toString(owner));
-        if (curator != address(0)) vm.setEnv("CURATOR", vm.toString(curator));
-        if (allocator != address(0)) vm.setEnv("ALLOCATOR", vm.toString(allocator));
-        if (sentinel != address(0)) vm.setEnv("SENTINEL", vm.toString(sentinel));
-
-        _deployVault();
-    }
-
     // ============ USDT RISK CAPITAL SPECIFIC TESTS ============
 
     function testRunScript() public {

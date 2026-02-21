@@ -6,12 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  # Shared environment variables
-  OWNER: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-  CURATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-  SENTINEL: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-
 jobs:
   # ============ USDS Risk Capital Vault Tests ============
   test-usds-risk-capital:
@@ -19,9 +13,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-      VAULT_NAME: "sky.money USDS Risk Capital"
-      VAULT_SYMBOL: "skyMoneyUsdsRiskCapital"
       VAULT_ADDRESS: "0xf42bca228D9bd3e2F8EE65Fec3d21De1063882d4"
       USDS_BLOCK_NUMBER: 24284915
 
@@ -47,11 +38,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-      # VAULT_NAME: "sky.money USDC Risk Capital"
-      # VAULT_SYMBOL: "skyMoneyUsdcRiskCapital"
-      # VAULT_ADDRESS: "0x..."
-      # USDC_BLOCK_NUMBER: 0
+      VAULT_ADDRESS: "0x56bfa6f53669B836D1E0Dfa5e99706b12c373ecf"
+      USDC_BLOCK_NUMBER: 24507943
 
     steps:
       - uses: actions/checkout@v4
@@ -65,10 +53,9 @@ jobs:
         run: |
           forge test --match-contract DeployUsdcRiskCapitalScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
-      # Uncomment after USDC Risk Capital vault is deployed on mainnet
-      # - name: Run USDC Risk Capital vault deployed tests
-      #   run: |
-      #     forge test --match-contract DeployedUsdcRiskCapitalVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDC_BLOCK_NUMBER }} -vvvv
+      - name: Run USDC Risk Capital vault deployed tests
+        run: |
+          forge test --match-contract DeployedUsdcRiskCapitalVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDC_BLOCK_NUMBER }} -vvvv
 
   # ============ USDT Risk Capital Vault Tests ============
   test-usdt-risk-capital:
@@ -76,11 +63,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-      # VAULT_NAME: "sky.money USDT Risk Capital"
-      # VAULT_SYMBOL: "skyMoneyUsdtRiskCapital"
-      # VAULT_ADDRESS: "0x..."
-      # USDT_RC_BLOCK_NUMBER: 0
+      VAULT_ADDRESS: "0x2bD3A43863c07B6A01581FADa0E1614ca5DF0E3d"
+      USDT_RC_BLOCK_NUMBER: 24508291
 
     steps:
       - uses: actions/checkout@v4
@@ -94,22 +78,18 @@ jobs:
         run: |
           forge test --match-contract DeployUsdtRiskCapitalScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
-      # Uncomment after USDT Risk Capital vault is deployed on mainnet
-      # - name: Run USDT Risk Capital vault deployed tests
-      #   run: |
-      #     forge test --match-contract DeployedUsdtRiskCapitalVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDT_RC_BLOCK_NUMBER }} -vvvv
+      - name: Run USDT Risk Capital vault deployed tests
+        run: |
+          forge test --match-contract DeployedUsdtRiskCapitalVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDT_RC_BLOCK_NUMBER }} -vvvv
 
   # ============ USDT Savings Vault Tests ============
   test-usdt-savings:
     name: USDT Savings Vault Tests
     runs-on: ubuntu-latest
 
-    env:
-      ALLOCATOR: "0x3F32bC09d41eE699844F8296e806417D6bf61Bba"
-      # VAULT_NAME: "sky.money USDT Savings"
-      # VAULT_SYMBOL: "skyMoneyUsdtSavings"
-      # VAULT_ADDRESS: "0x..."
-      # USDT_SAV_BLOCK_NUMBER: 0
+    # env:
+    #   VAULT_ADDRESS: "0x..."
+    #   USDT_SAV_BLOCK_NUMBER: 0
 
     steps:
       - uses: actions/checkout@v4
@@ -134,9 +114,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ALLOCATOR: "0xE4d5F54CE1830d5eCC49751021F306CFE7a52649"
-      VAULT_NAME: "sky.money USDS Flagship"
-      VAULT_SYMBOL: "skyMoneyUsdsFlagship"
       VAULT_ADDRESS: "0xE15fcC81118895b67b6647BBd393182dF44E11E0"
       ADAPTER_ADDRESS: "0xf94BE39e8863183Ff41194b5923627C90A34039D"
       ORACLE_CBBTC: "0xA5AEb90F9f122989fE69Ae6224Ed923A0caF33B4"

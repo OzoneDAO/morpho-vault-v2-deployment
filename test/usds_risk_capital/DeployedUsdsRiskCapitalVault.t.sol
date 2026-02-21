@@ -15,6 +15,14 @@ import {BaseDeployedVaultTest} from "../base/BaseDeployedVaultTest.sol";
  * @dev Set VAULT_ADDRESS env var to test a specific deployed vault
  */
 contract DeployedUsdsRiskCapitalVaultTest is BaseDeployedVaultTest {
+    function _expectedVaultName() internal pure override returns (string memory) {
+        return "sky.money USDS Risk Capital";
+    }
+
+    function _expectedVaultSymbol() internal pure override returns (string memory) {
+        return "skyMoneyUsdsRiskCapital";
+    }
+
     // ============ USDS RISK CAPITAL SPECIFIC TESTS ============
 
     function testLiquidityAdapterSet() public view {

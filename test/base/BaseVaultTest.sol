@@ -25,14 +25,6 @@ abstract contract BaseVaultTest is Test {
     /// @notice Deploy the vault and set state variables
     function _deployVault() internal virtual;
 
-    /// @notice Deploy vault with custom roles
-    function _deployVaultWithRoles(
-        address owner,
-        address curator,
-        address allocator,
-        address sentinel
-    ) internal virtual;
-
     /// @notice Loan token address (override for non-USDS vaults)
     function _loanTokenAddress() internal pure virtual returns (address) {
         return Constants.USDS;
@@ -43,6 +35,11 @@ abstract contract BaseVaultTest is Test {
         return 1000e18;
     }
 
+    /// @notice Expected allocator address (override for flagship vault)
+    function _expectedAllocator() internal pure virtual returns (address) {
+        return Constants.SKY_MONEY_CURATOR;
+    }
+
     // ============ SETUP ============
 
     function setUp() public virtual {
@@ -50,12 +47,6 @@ abstract contract BaseVaultTest is Test {
 
         deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         deployer = vm.addr(deployerPrivateKey);
-
-        // Reset role env vars to deployer address (empty string doesn't work properly with envOr for addresses)
-        vm.setEnv("OWNER", vm.toString(deployer));
-        vm.setEnv("CURATOR", vm.toString(deployer));
-        vm.setEnv("ALLOCATOR", vm.toString(deployer));
-        vm.setEnv("SENTINEL", vm.toString(address(0)));
 
         loanToken = IERC20(_loanTokenAddress());
     }
@@ -76,19 +67,14 @@ abstract contract BaseVaultTest is Test {
         console.log("Deployer:", deployer);
     }
 
-    function testRoleTransferToCustomAddresses() public {
-        address customOwner = makeAddr("customOwner");
-        address customCurator = makeAddr("customCurator");
-        address customAllocator = makeAddr("customAllocator");
-        address customSentinel = makeAddr("customSentinel");
+    function testRolesMatchExpectedConstants() public {
+        _deployVault();
 
-        _deployVaultWithRoles(customOwner, customCurator, customAllocator, customSentinel);
-
-        assertEq(vault.owner(), customOwner, "Owner should be custom address");
-        assertEq(vault.curator(), customCurator, "Curator should be custom address");
-        assertTrue(vault.isAllocator(customAllocator), "Custom allocator should be set");
+        assertEq(vault.owner(), Constants.SKY_MONEY_CURATOR, "Owner should be SKY_MONEY_CURATOR");
+        assertEq(vault.curator(), Constants.SKY_MONEY_CURATOR, "Curator should be SKY_MONEY_CURATOR");
+        assertTrue(vault.isAllocator(_expectedAllocator()), "Expected allocator should be set");
         assertFalse(vault.isAllocator(deployer), "Deployer should NOT be allocator");
-        assertTrue(vault.isSentinel(customSentinel), "Sentinel should be set");
+        assertTrue(vault.isSentinel(Constants.SKY_MONEY_CURATOR), "Sentinel should be SKY_MONEY_CURATOR");
     }
 
     // ============ TIMELOCK CONFIGURATION TESTS ============
@@ -328,17 +314,12 @@ abstract contract BaseVaultTest is Test {
     function testOnlyAllocatorCanAllocate() public {
         _deployVault();
 
-        // Get the actual allocator from env (may be deployer or custom address from .env)
-        address expectedAllocator = vm.envOr("ALLOCATOR", deployer);
-
         // Verify the expected allocator IS an allocator
-        assertTrue(vault.isAllocator(expectedAllocator), "Expected allocator should have allocator role");
+        assertTrue(vault.isAllocator(_expectedAllocator()), "Expected allocator should have allocator role");
 
         // Verify non-allocator cannot allocate
         address notAllocator = makeAddr("notAllocator");
         assertFalse(vault.isAllocator(notAllocator), "Random address should not be allocator");
-
-        // NOTE: Full allocation functionality is tested in vault-specific tests
     }
 
     // ============ VAULT METADATA TESTS ============

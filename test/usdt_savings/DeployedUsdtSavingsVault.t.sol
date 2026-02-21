@@ -27,6 +27,14 @@ contract DeployedUsdtSavingsVaultTest is BaseDeployedVaultTest {
         return 100e6;
     }
 
+    function _expectedVaultName() internal pure override returns (string memory) {
+        return "sky.money USDT Savings";
+    }
+
+    function _expectedVaultSymbol() internal pure override returns (string memory) {
+        return "skyMoneyUsdtSavings";
+    }
+
     // ============ USDT SAVINGS SPECIFIC TESTS ============
 
     function testLiquidityAdapterSet() public view {

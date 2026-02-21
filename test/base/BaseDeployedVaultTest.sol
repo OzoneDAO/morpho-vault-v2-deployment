@@ -35,6 +35,17 @@ abstract contract BaseDeployedVaultTest is Test {
         return 100e18;
     }
 
+    /// @notice Expected allocator address (override for flagship vault)
+    function _expectedAllocator() internal pure virtual returns (address) {
+        return Constants.SKY_MONEY_CURATOR;
+    }
+
+    /// @notice Expected vault name (must override per vault)
+    function _expectedVaultName() internal pure virtual returns (string memory);
+
+    /// @notice Expected vault symbol (must override per vault)
+    function _expectedVaultSymbol() internal pure virtual returns (string memory);
+
     function setUp() public virtual {
         address vaultAddr = vm.envOr("VAULT_ADDRESS", address(0));
         vault = IVaultV2(vaultAddr);
@@ -67,23 +78,21 @@ abstract contract BaseDeployedVaultTest is Test {
     }
 
     function testExpectedOwner() public view {
-        address expectedOwner = vm.envAddress("OWNER");
         console.log("=== Expected Owner Check ===");
-        console.log("Expected Owner:", expectedOwner);
+        console.log("Expected Owner:", Constants.SKY_MONEY_CURATOR);
         console.log("Actual Owner:", vault.owner());
-        assertEq(vault.owner(), expectedOwner, "Owner should match expected");
+        assertEq(vault.owner(), Constants.SKY_MONEY_CURATOR, "Owner should match expected");
     }
 
     function testExpectedCurator() public view {
-        address expectedCurator = vm.envAddress("CURATOR");
         console.log("=== Expected Curator Check ===");
-        console.log("Expected Curator:", expectedCurator);
+        console.log("Expected Curator:", Constants.SKY_MONEY_CURATOR);
         console.log("Actual Curator:", vault.curator());
-        assertEq(vault.curator(), expectedCurator, "Curator should match expected");
+        assertEq(vault.curator(), Constants.SKY_MONEY_CURATOR, "Curator should match expected");
     }
 
     function testExpectedAllocator() public view {
-        address expectedAllocator = vm.envAddress("ALLOCATOR");
+        address expectedAllocator = _expectedAllocator();
         console.log("=== Expected Allocator Check ===");
         console.log("Expected Allocator:", expectedAllocator);
         console.log("Is Allocator:", vault.isAllocator(expectedAllocator));
@@ -91,17 +100,14 @@ abstract contract BaseDeployedVaultTest is Test {
     }
 
     function testExpectedSentinel() public view {
-        address expectedSentinel = vm.envOr("SENTINEL", address(0));
-        if (expectedSentinel != address(0)) {
-            console.log("=== Expected Sentinel Check ===");
-            console.log("Expected Sentinel:", expectedSentinel);
-            console.log("Is Sentinel:", vault.isSentinel(expectedSentinel));
-            assertTrue(vault.isSentinel(expectedSentinel), "Expected address should be sentinel");
-        }
+        console.log("=== Expected Sentinel Check ===");
+        console.log("Expected Sentinel:", Constants.SKY_MONEY_CURATOR);
+        console.log("Is Sentinel:", vault.isSentinel(Constants.SKY_MONEY_CURATOR));
+        assertTrue(vault.isSentinel(Constants.SKY_MONEY_CURATOR), "Expected address should be sentinel");
     }
 
     function testExpectedVaultName() public view {
-        string memory expectedName = vm.envString("VAULT_NAME");
+        string memory expectedName = _expectedVaultName();
         console.log("=== Expected Vault Name Check ===");
         console.log("Expected Name:", expectedName);
         console.log("Actual Name:", vault.name());
@@ -109,7 +115,7 @@ abstract contract BaseDeployedVaultTest is Test {
     }
 
     function testExpectedVaultSymbol() public view {
-        string memory expectedSymbol = vm.envString("VAULT_SYMBOL");
+        string memory expectedSymbol = _expectedVaultSymbol();
         console.log("=== Expected Vault Symbol Check ===");
         console.log("Expected Symbol:", expectedSymbol);
         console.log("Actual Symbol:", vault.symbol());
