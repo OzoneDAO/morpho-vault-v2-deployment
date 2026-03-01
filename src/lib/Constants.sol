@@ -37,12 +37,18 @@ library Constants {
     address internal constant CHAINLINK_CBBTC_USD = 0x2665701293fCbEB223D11A08D826563EDcCE423A;
     address internal constant CHAINLINK_STETH_USD = 0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8;
     address internal constant CHAINLINK_ETH_USD = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
+    address internal constant CHAINLINK_DAI_USD = 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9;
     address internal constant CHAINLINK_USDS_USD = 0xfF30586cD0F29eD462364C7e81375FC0C71219b1;
     address internal constant CHAINLINK_USDC_USD = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
     address internal constant CHAINLINK_USDT_USD = 0x3E7d1eAB13ad0104d2750B8863b489D65364e32D;
 
     // Morpho wstETH/stETH exchange rate adapter (Chainlink-compatible interface)
     address internal constant MORPHO_WSTETH_STETH_ADAPTER = 0x905b7dAbCD3Ce6B792D874e303D336424Cdb1421;
+
+    // ============ EXISTING ORACLES & MARKETS ============
+
+    address internal constant EXISTING_SUSDS_USDT_ORACLE = 0x0C426d174FC88B7A25d59945Ab2F7274Bf7B4C79;
+    bytes32 internal constant EXISTING_SUSDS_USDT_MARKET_ID = 0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b;
 
     // ============ LLTV VALUES ============
 

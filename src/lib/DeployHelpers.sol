@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Script, console} from "forge-std/Script.sol";
+import {MarketParams} from "metamorpho-v1.1-morpho-blue/src/interfaces/IMorpho.sol";
 import {IVaultV2} from "vault-v2/interfaces/IVaultV2.sol";
 import {VaultV2} from "vault-v2/VaultV2.sol";
 import {IMorphoMarketV1AdapterV2} from "vault-v2/adapters/interfaces/IMorphoMarketV1AdapterV2.sol";
@@ -68,6 +69,43 @@ abstract contract DeployHelpers is Script {
 
         (bool execSuccess,) = target.call(data);
         require(execSuccess, "Execution failed");
+    }
+
+    /**
+     * @notice Configure a single-market vault with adapter, liquidity adapter, and 100% caps
+     * @param vault The vault to configure
+     * @param adapter The adapter address
+     * @param params The market params (collateral token is read from params)
+     * @param deployer The deployer address (set as temporary curator/allocator)
+     */
+    function _configureSingleMarketVault(VaultV2 vault, address adapter, MarketParams memory params, address deployer) internal {
+        vault.setCurator(deployer);
+        console.log("Defined Deployer as Curator");
+
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.setIsAllocator.selector, deployer, true));
+
+        _abdicateGatesAndRegistry(vault);
+
+        vault.setLiquidityAdapterAndData(adapter, abi.encode(params));
+
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.addAdapter.selector, adapter));
+
+        bytes memory adapterIdData = abi.encode("this", adapter);
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, adapterIdData, type(uint128).max));
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, adapterIdData, 1e18));
+
+        bytes memory marketIdData = abi.encode("this/marketParams", adapter, params);
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, marketIdData, type(uint128).max));
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, marketIdData, 1e18));
+
+        bytes memory collateralIdData = abi.encode("collateralToken", params.collateralToken);
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, collateralIdData, type(uint128).max));
+        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, collateralIdData, 1e18));
+
+        console.log("Caps and Adapter configured.");
+
+        vault.setMaxRate(Constants.MAX_RATE);
+        console.log("Max Rate set to 200% APR");
     }
 
     /**

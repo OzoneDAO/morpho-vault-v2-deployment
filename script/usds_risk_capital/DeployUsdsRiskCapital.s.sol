@@ -88,7 +88,7 @@ contract DeployUsdsRiskCapital is DeployHelpers, StdCheats {
         console.log("Adapter deployed at:", result.adapter);
 
         // Step 5: Configuration
-        _configureVault(vault, result.adapter, params, deployer);
+        _configureSingleMarketVault(vault, result.adapter, params, deployer);
 
         // Step 6: Dead Deposits
         _setupDeadDeposits(vault, morpho, params, deployer);
@@ -101,40 +101,6 @@ contract DeployUsdsRiskCapital is DeployHelpers, StdCheats {
         _finalizeOwnership(vault, deployer, finalOwner, finalCurator, finalAllocator, sentinel);
 
         vm.stopBroadcast();
-    }
-
-    function _configureVault(VaultV2 vault, address adapter, MarketParams memory params, address deployer) internal {
-        // Setup roles
-        vault.setCurator(deployer);
-        console.log("Defined Deployer as Curator");
-
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.setIsAllocator.selector, deployer, true));
-
-        // Abdicate gates and registry
-        _abdicateGatesAndRegistry(vault);
-
-        // Set liquidity adapter (deposits auto-allocated)
-        vault.setLiquidityAdapterAndData(adapter, abi.encode(params));
-
-        // Add adapter and caps
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.addAdapter.selector, adapter));
-
-        bytes memory adapterIdData = abi.encode("this", adapter);
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, adapterIdData, type(uint128).max));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, adapterIdData, 1e18));
-
-        bytes memory marketIdData = abi.encode("this/marketParams", adapter, params);
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, marketIdData, type(uint128).max));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, marketIdData, 1e18));
-
-        bytes memory collateralIdData = abi.encode("collateralToken", Constants.ST_USDS);
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseAbsoluteCap.selector, collateralIdData, type(uint128).max));
-        _submitAndExecute(address(vault), abi.encodeWithSelector(IVaultV2.increaseRelativeCap.selector, collateralIdData, 1e18));
-
-        console.log("Caps and Adapter configured.");
-
-        vault.setMaxRate(Constants.MAX_RATE);
-        console.log("Max Rate set to 200% APR");
     }
 
     /// @dev Dead deposits bootstrap the market to prevent share manipulation attacks and seed initial utilization.

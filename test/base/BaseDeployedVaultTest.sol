@@ -229,7 +229,7 @@ abstract contract BaseDeployedVaultTest is Test {
 
     // ============ USER OPERATIONS ============
 
-    function testUserDeposit() public {
+    function testUserDeposit() public virtual {
         address user = makeAddr("testUser");
         uint256 depositAmount = _depositAmount();
 
@@ -255,7 +255,7 @@ abstract contract BaseDeployedVaultTest is Test {
         vm.stopPrank();
     }
 
-    function testUserWithdraw() public {
+    function testUserWithdraw() public virtual {
         address user = makeAddr("testUser2");
         uint256 depositAmount = _depositAmount();
 
@@ -285,7 +285,7 @@ abstract contract BaseDeployedVaultTest is Test {
         vm.stopPrank();
     }
 
-    function testFullDepositWithdrawCycle() public {
+    function testFullDepositWithdrawCycle() public virtual {
         address user = makeAddr("cycleUser");
         uint256 depositAmount = _depositAmount() * 10;
 
