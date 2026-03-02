@@ -87,9 +87,9 @@ jobs:
     name: USDT Savings Vault Tests
     runs-on: ubuntu-latest
 
-    # env:
-    #   VAULT_ADDRESS: "0x..."
-    #   USDT_SAV_BLOCK_NUMBER: 0
+    env:
+      VAULT_ADDRESS: "0x23f5E9c35820f4baB695Ac1F19c203cC3f8e1e11"
+      USDT_SAV_BLOCK_NUMBER: 24569066
 
     steps:
       - uses: actions/checkout@v4
@@ -103,10 +103,9 @@ jobs:
         run: |
           forge test --match-contract DeployUsdtSavingsScript --fork-url ${{ secrets.RPC_URL }} -vvvv
 
-      # Uncomment after USDT Savings vault is deployed on mainnet
-      # - name: Run USDT Savings vault deployed tests
-      #   run: |
-      #     forge test --match-contract DeployedUsdtSavingsVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDT_SAV_BLOCK_NUMBER }} -vvvv
+      - name: Run USDT Savings vault deployed tests
+        run: |
+          forge test --match-contract DeployedUsdtSavingsVault --fork-url ${{ secrets.RPC_URL }} --fork-block-number ${{ env.USDT_SAV_BLOCK_NUMBER }} -vvvv
 
   # ============ Flagship Vault Tests ============
   test-flagship-vault:
