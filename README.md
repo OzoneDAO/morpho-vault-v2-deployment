@@ -11,7 +11,7 @@ This repository deploys single-market and multi-market stUSDS-collateralized Mor
 | **USDS Risk Capital** | USDS | Single-market, auto-allocation | stUSDS | 86% |
 | **USDC Risk Capital** | USDC | Single-market, auto-allocation | stUSDS | 86% |
 | **USDT Risk Capital** | USDT | Single-market, auto-allocation | stUSDS | 86% |
-| **USDT Savings** | USDT | Single-market, auto-allocation | stUSDS | 96.5% |
+| **USDT Savings** | USDT | Single-market, auto-allocation | sUSDS | 96.5% |
 | **Flagship** | USDS | Multi-market, manual allocation | stUSDS, cbBTC, wstETH, WETH | 86% |
 
 ## Repository Structure
@@ -63,7 +63,8 @@ This repository deploys single-market and multi-market stUSDS-collateralized Mor
 ├── bot/
 │   ├── src/allocator.ts
 │   └── README.md
-└── DEPLOYMENT_SEQUENCE.md
+├── DEPLOYMENT_SEQUENCE.md
+└── DEPLOYMENT_SEQUENCE_USDT_SAVINGS.md
 ```
 
 ## Vaults
@@ -80,7 +81,7 @@ All four single-market vaults share the same architecture:
 | **USDS Risk Capital** | USDS (18 dec) | 86% | stUSDS ERC4626 redemption rate only |
 | **USDC Risk Capital** | USDC (6 dec) | 86% | stUSDS ERC4626 + USDS/USD & USDC/USD Chainlink |
 | **USDT Risk Capital** | USDT (6 dec) | 86% | stUSDS ERC4626 + USDS/USD & USDT/USD Chainlink |
-| **USDT Savings** | USDT (6 dec) | 96.5% | stUSDS ERC4626 + USDS/USD & USDT/USD Chainlink |
+| **USDT Savings** | USDT (6 dec) | 96.5% | Existing sUSDS/USDT oracle (sUSDS ERC4626 + DAI/USD & USDT/USD) |
 
 ### Flagship Vault (Multi-Market)
 
@@ -269,11 +270,13 @@ USDS:    0xdC035D45d973E3EC169d2276DDab16f1e407384F
 USDC:    0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 USDT:    0xdAC17F958D2ee523a2206206994597C13D831ec7
 stUSDS:  0x99CD4Ec3f88A45940936F469E4bB72A2A701EEB9
+sUSDS:   0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD
 WETH:    0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
 wstETH:  0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0
 cbBTC:   0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf
 
 # Chainlink Feeds
+DAI/USD:   0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9
 USDS/USD:  0xfF30586cD0F29eD462364C7e81375FC0C71219b1
 USDC/USD:  0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6
 USDT/USD:  0x3E7d1eAB13ad0104d2750B8863b489D65364e32D
@@ -294,7 +297,7 @@ ADAPTER_REGISTRY: 0x3696c5eAe4a7Ffd04Ea163564571E9CD8Ed9364e
 | USDS Risk Capital | ~0.0015 | 2 USDS, 2.1 stUSDS |
 | USDC Risk Capital | ~0.0015 | 2 USDC, 2.1 stUSDS |
 | USDT Risk Capital | ~0.0015 | 2 USDT, 2.1 stUSDS |
-| USDT Savings | ~0.0015 | 2 USDT, 2.1 stUSDS |
+| USDT Savings | ~0.0005 | 1 USDT (reuses existing market) |
 | Flagship | ~0.003 | ~4 USDS, 0.001 wstETH, 0.001 WETH, 0.0001 cbBTC |
 
 ## Troubleshooting
@@ -312,3 +315,6 @@ USDT's `approve()` doesn't return a bool (non-standard ERC20). All USDT scripts 
 
 ### Market Already Exists
 Scripts handle this gracefully with try/catch. Safe to re-run.
+
+### Stale Fork IRM Overflow (USDT Savings)
+When reusing an existing market with borrows on a stale Tenderly fork, the adaptive IRM overflows computing `exp(speed * elapsed)` for large `elapsed`. The deployment script avoids this by doing the dead deposit before setting the liquidity adapter (so the deposit stays idle). Deployed tests use `vm.warp(market.lastUpdate + 1)` before deposits.
