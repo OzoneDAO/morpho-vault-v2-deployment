@@ -27,6 +27,9 @@ This repository deploys single-market and multi-market stUSDS-collateralized Mor
 │   │   └── DeployUsdtRiskCapital.s.sol
 │   ├── usdt_savings/
 │   │   └── DeployUsdtSavings.s.sol
+│   ├── usdt_savings_market_migration/
+│   │   ├── DeployOracleAndMarket.s.sol
+│   │   └── README.md
 │   └── flagship/
 │       ├── 1_CreateVault.s.sol
 │       ├── 2_CreateCbBtcMarket.s.sol
@@ -52,6 +55,16 @@ This repository deploys single-market and multi-market stUSDS-collateralized Mor
 │   ├── usdt_savings/
 │   │   ├── DeployUsdtSavingsScript.t.sol
 │   │   └── DeployedUsdtSavingsVault.t.sol
+│   ├── usdt_savings_market_migration/
+│   │   ├── DeployMigrationScript.t.sol
+│   │   └── deployed/
+│   │       ├── BaseMigrationTest.sol
+│   │       ├── 1_DeployOracleAndMarket.t.sol
+│   │       ├── 2_SubmitCaps.t.sol
+│   │       ├── 3_ExecuteCaps.t.sol
+│   │       ├── 4_SwitchLiquidityAdapter.t.sol
+│   │       ├── 5_Reallocate.t.sol
+│   │       └── 6_Cleanup.t.sol
 │   └── flagship/
 │       ├── DeployFlagshipScript.t.sol
 │       └── deployed/
@@ -60,11 +73,9 @@ This repository deploys single-market and multi-market stUSDS-collateralized Mor
 │           ├── 3_CreateWstEthMarket.t.sol
 │           ├── 4_CreateWethMarket.t.sol
 │           └── 5_ConfigureVault.t.sol
-├── bot/
-│   ├── src/allocator.ts
-│   └── README.md
-├── DEPLOYMENT_SEQUENCE.md
-└── DEPLOYMENT_SEQUENCE_USDT_SAVINGS.md
+└── bot/
+    ├── src/allocator.ts
+    └── README.md
 ```
 
 ## Vaults
@@ -81,7 +92,7 @@ All four single-market vaults share the same architecture:
 | **USDS Risk Capital** | USDS (18 dec) | 86% | stUSDS ERC4626 redemption rate only |
 | **USDC Risk Capital** | USDC (6 dec) | 86% | stUSDS ERC4626 + USDS/USD & USDC/USD Chainlink |
 | **USDT Risk Capital** | USDT (6 dec) | 86% | stUSDS ERC4626 + USDS/USD & USDT/USD Chainlink |
-| **USDT Savings** | USDT (6 dec) | 96.5% | Existing sUSDS/USDT oracle (sUSDS ERC4626 + DAI/USD & USDT/USD) |
+| **USDT Savings** | USDT (6 dec) | 96.5% | sUSDS ERC4626 + USDS/USD & CappedUSDT/USD (migrated from DAI/USD & uncapped USDT/USD) |
 
 ### Flagship Vault (Multi-Market)
 
@@ -94,6 +105,14 @@ All four single-market vaults share the same architecture:
   - WETH/USDS
 - **Caps**: 20% max to adapter, 5% max per market
 - **Deployment**: 5 sequential scripts
+
+### USDT Savings Market Migration
+
+The USDT Savings vault was initially deployed using an existing sUSDS/USDT market with DAI/USD oracle and uncapped USDT/USD feed. A migration moves it to a new market with USDS/USD oracle and USDT/USD capped at $1.00 (to prevent liquidations from USDT being overpriced).
+
+- **Script**: `script/usdt_savings_market_migration/DeployOracleAndMarket.s.sol` — deploys capped oracle, Morpho oracle, creates and seeds new market
+- **Migration steps** (via [Morpho Curator app](https://curator.morpho.org/vaults)): submit caps (3-day timelock), execute caps, switch liquidity adapter, reallocate, cleanup
+- **Guide**: [`script/usdt_savings_market_migration/README.md`](script/usdt_savings_market_migration/README.md)
 
 ## Installation
 
@@ -117,6 +136,9 @@ sleep 5
 # Run all script tests
 forge test --match-path "test/*/Deploy*Script.t.sol" --fork-url http://localhost:8545 -v
 forge test --match-path "test/flagship/DeployFlagshipScript*" --fork-url http://localhost:8545 -v
+
+# Migration script test
+forge test --match-path "test/usdt_savings_market_migration/DeployMigrationScript*" --fork-url http://localhost:8545 -v
 
 # Or run individually
 forge test --match-contract DeployUsdsRiskCapitalScript --fork-url http://localhost:8545 -v
@@ -150,6 +172,15 @@ forge test --match-path "test/flagship/deployed/5_*" --fork-url $RPC_URL --fork-
 
 # Or all Flagship deployed tests at once
 forge test --match-path "test/flagship/deployed/*" --fork-url $RPC_URL --fork-block-number $FLAGSHIP_BLOCK_NUMBER -v
+
+# Migration deployed tests (incremental, one per step)
+# Requires: VAULT_ADDRESS, NEW_ORACLE, CAPPED_USDT_FEED
+forge test --match-path "test/usdt_savings_market_migration/deployed/1_*" --fork-url $RPC_URL -v
+forge test --match-path "test/usdt_savings_market_migration/deployed/2_*" --fork-url $RPC_URL -v
+forge test --match-path "test/usdt_savings_market_migration/deployed/3_*" --fork-url $RPC_URL -v
+forge test --match-path "test/usdt_savings_market_migration/deployed/4_*" --fork-url $RPC_URL -v
+forge test --match-path "test/usdt_savings_market_migration/deployed/5_*" --fork-url $RPC_URL -v
+forge test --match-path "test/usdt_savings_market_migration/deployed/6_*" --fork-url $RPC_URL -v
 ```
 
 ## Deployment

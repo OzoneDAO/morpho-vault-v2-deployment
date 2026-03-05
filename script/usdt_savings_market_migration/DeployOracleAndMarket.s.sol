@@ -23,10 +23,8 @@ import {IMorphoChainlinkOracleV2Factory} from "../../src/lib/DeployHelpers.sol";
  * Prerequisites:
  *   - Deployer needs: 2 USDT, 2.1 sUSDS
  *
- * After running, set these env vars for script 2:
- *   CAPPED_USDT_FEED=<deployed capped feed address>
- *   NEW_ORACLE=<deployed oracle address>
- *   NEW_MARKET_ID=<new market ID>
+ * After running, note the deployed addresses and market ID for the
+ * migration steps on the Morpho Curator app (see README.md).
  */
 contract DeployOracleAndMarket is Script {
     using SafeERC20 for IERC20;
@@ -79,13 +77,13 @@ contract DeployOracleAndMarket is Script {
         // Instructions for next steps
         console.log("");
         console.log("=== NEXT STEPS ===");
-        console.log("Set these environment variables:");
+        console.log("Use the Morpho Curator app to complete the migration.");
+        console.log("See script/usdt_savings_market_migration/README.md for the full guide.");
         console.log("");
-        console.log("export CAPPED_USDT_FEED=%s", result.cappedUsdtFeed);
-        console.log("export NEW_ORACLE=%s", result.oracle);
-        console.log("export NEW_MARKET_ID=%s", vm.toString(result.marketId));
-        console.log("");
-        console.log("Then run: forge script script/usdt_savings_market_migration/2_GenerateSafePayload.s.sol ...");
+        console.log("Deployed addresses:");
+        console.log("  CappedOracleFeed: %s", result.cappedUsdtFeed);
+        console.log("  Oracle:           %s", result.oracle);
+        console.log("  Market ID:        %s", vm.toString(result.marketId));
     }
 
     function _createOracle(address cappedUsdtFeed) internal returns (address oracle) {

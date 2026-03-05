@@ -10,7 +10,7 @@ import {IOracle} from "metamorpho-v1.1-morpho-blue/src/interfaces/IOracle.sol";
 import {CappedOracleFeed} from "capped-oracle-feed/CappedOracleFeed.sol";
 import {Constants} from "../../src/lib/Constants.sol";
 import {IMorphoChainlinkOracleV2, AggregatorV3Interface} from "../../src/lib/DeployHelpers.sol";
-import {DeployOracleAndMarket} from "../../script/usdt_savings_market_migration/1_DeployOracleAndMarket.s.sol";
+import {DeployOracleAndMarket} from "../../script/usdt_savings_market_migration/DeployOracleAndMarket.s.sol";
 
 /**
  * @title DeployMigrationScriptTest
