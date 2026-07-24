@@ -1,6 +1,6 @@
 # Morpho Vault V2 Deployment
 
-Foundry scripts, tests, and allocator bot for deploying **Morpho Vault V2** vaults on Ethereum mainnet.
+Foundry scripts and tests for deploying **Morpho Vault V2** vaults on Ethereum mainnet.
 
 ## Overview
 
@@ -39,44 +39,44 @@ This repository deploys single-market and multi-market stUSDS-collateralized Mor
 ├── src/lib/
 │   ├── Constants.sol
 │   └── DeployHelpers.sol
-├── test/
-│   ├── base/
-│   │   ├── BaseVaultTest.sol
-│   │   └── BaseDeployedVaultTest.sol
-│   ├── usds_risk_capital/
-│   │   ├── DeployUsdsRiskCapitalScript.t.sol
-│   │   └── DeployedUsdsRiskCapitalVault.t.sol
-│   ├── usdc_risk_capital/
-│   │   ├── DeployUsdcRiskCapitalScript.t.sol
-│   │   └── DeployedUsdcRiskCapitalVault.t.sol
-│   ├── usdt_risk_capital/
-│   │   ├── DeployUsdtRiskCapitalScript.t.sol
-│   │   └── DeployedUsdtRiskCapitalVault.t.sol
-│   ├── usdt_savings/
-│   │   ├── DeployUsdtSavingsScript.t.sol
-│   │   └── DeployedUsdtSavingsVault.t.sol
-│   ├── usdt_savings_market_migration/
-│   │   ├── DeployMigrationScript.t.sol
-│   │   └── deployed/
-│   │       ├── BaseMigrationTest.sol
-│   │       ├── 1_DeployOracleAndMarket.t.sol
-│   │       ├── 2_SubmitCaps.t.sol
-│   │       ├── 3_ExecuteCaps.t.sol
-│   │       ├── 4_SwitchLiquidityAdapter.t.sol
-│   │       ├── 5_Reallocate.t.sol
-│   │       └── 6_Cleanup.t.sol
-│   └── flagship/
-│       ├── DeployFlagshipScript.t.sol
-│       └── deployed/
-│           ├── 1_CreateVault.t.sol
-│           ├── 2_CreateCbBtcMarket.t.sol
-│           ├── 3_CreateWstEthMarket.t.sol
-│           ├── 4_CreateWethMarket.t.sol
-│           └── 5_ConfigureVault.t.sol
-└── bot/
-    ├── src/allocator.ts
-    └── README.md
+└── test/
+    ├── base/
+    │   ├── BaseVaultTest.sol
+    │   └── BaseDeployedVaultTest.sol
+    ├── usds_risk_capital/
+    │   ├── DeployUsdsRiskCapitalScript.t.sol
+    │   └── DeployedUsdsRiskCapitalVault.t.sol
+    ├── usdc_risk_capital/
+    │   ├── DeployUsdcRiskCapitalScript.t.sol
+    │   └── DeployedUsdcRiskCapitalVault.t.sol
+    ├── usdt_risk_capital/
+    │   ├── DeployUsdtRiskCapitalScript.t.sol
+    │   └── DeployedUsdtRiskCapitalVault.t.sol
+    ├── usdt_savings/
+    │   ├── DeployUsdtSavingsScript.t.sol
+    │   └── DeployedUsdtSavingsVault.t.sol
+    ├── usdt_savings_market_migration/
+    │   ├── DeployMigrationScript.t.sol
+    │   └── deployed/
+    │       ├── BaseMigrationTest.sol
+    │       ├── 1_DeployOracleAndMarket.t.sol
+    │       ├── 2_SubmitCaps.t.sol
+    │       ├── 3_ExecuteCaps.t.sol
+    │       ├── 4_SwitchLiquidityAdapter.t.sol
+    │       ├── 5_Reallocate.t.sol
+    │       └── 6_Cleanup.t.sol
+    └── flagship/
+        ├── DeployFlagshipScript.t.sol
+        └── deployed/
+            ├── 1_CreateVault.t.sol
+            ├── 2_CreateCbBtcMarket.t.sol
+            ├── 3_CreateWstEthMarket.t.sol
+            ├── 4_CreateWethMarket.t.sol
+            └── 5_ConfigureVault.t.sol
 ```
+
+> The allocator bot now lives in its own repository:
+> [soterlabs/morpho-allocator-bots](https://github.com/soterlabs/morpho-allocator-bots).
 
 ## Vaults
 
@@ -263,17 +263,9 @@ forge script script/flagship/5_ConfigureVault.s.sol \
 
 The Flagship vault requires an allocator bot to maintain the 80% idle / 20% allocated strategy. The bot executes transactions through a **Safe 1/3 multisig** (threshold 1, 3 owners). The Safe address is set as the vault's allocator, and the bot autonomously signs and executes via `execTransaction`.
 
-```bash
-cd bot
-npm install
-cp .env.example .env
-# Fill in SAFE_ADDRESS, PRIVATE_KEY (bot signer), and deployment addresses
+The bot lives in its own repository: [**soterlabs/morpho-allocator-bots**](https://github.com/soterlabs/morpho-allocator-bots). See that repo's README for setup and configuration.
 
-DRY_RUN=true npm run dev  # Test with dry run
-npm run dev                # Run for real
-```
-
-See [bot/README.md](bot/README.md) and [DEPLOYMENT_SEQUENCE.md](DEPLOYMENT_SEQUENCE.md) for details.
+See [DEPLOYMENT_SEQUENCE.md](DEPLOYMENT_SEQUENCE.md) for deployment details.
 
 ## Role Hierarchy
 
